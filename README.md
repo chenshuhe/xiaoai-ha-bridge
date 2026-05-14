@@ -28,7 +28,7 @@
 ### Docker 部署（推荐）
 
 ```bash
-git clone https://github.com/your-username/xiaoai-ha-bridge.git
+git clone https://github.com/chenshuhe/xiaoai-ha-bridge.git
 cd xiaoai-ha-bridge
 docker compose up -d
 ```
