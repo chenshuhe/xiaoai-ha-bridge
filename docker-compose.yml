@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  xiaoai-ha-bridge:
+    build: .
+    container_name: xiaoai-ha-bridge
+    restart: unless-stopped
+    ports:
+      - "47521:47521"       # Web 配置面板
+    volumes:
+      - ./config:/app/config
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
+    # 如需访问局域网内的 HA，取消下面注释并注释掉 ports
+    # network_mode: host
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

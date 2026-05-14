@@ -1,0 +1,7 @@
+aiofiles>=23.0
+miservice_fork>=2.9.0
+aiohttp>=3.9.0
+pyyaml>=6.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9

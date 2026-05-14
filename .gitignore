@@ -1,0 +1,27 @@
+# 持久化敏感数据
+config/auth.json
+config/.mi.token
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 日志
+logs/
+*.log
+
+# 环境
+.env
+venv/
+.venv/
+
+# Claude
+.claude/
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+docker-compose.override.yml
