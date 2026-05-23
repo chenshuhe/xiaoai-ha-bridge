@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.6.4"
+VERSION = "3.6.5"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -1087,47 +1087,70 @@ async def xiaomi_verify(req: XiaomiVerifyRequest):
 @app.post("/api/qr/login")
 async def qr_login_start():
     """发起 QR 扫码登录，返回二维码链接"""
-    import string
+    import string, random
     try:
-        device_id = ''.join(__import__('random').choices(string.ascii_letters + string.digits, k=16)).upper()
+        device_id = ''.join(random.choices(string.ascii_letters + string.digits, k=16)).upper()
         headers = {
             "User-Agent": "MiHome/6.0.103 (com.xiaomi.mihome; build:6.0.103.1; iOS 14.4.0) Alamofire/6.0.103",
             "Content-Type": "application/x-www-form-urlencoded",
         }
         s = aiohttp.ClientSession()
-        # Step 1: serviceLogin
+        # Step 1: serviceLogin?sid=mijia
         url = f"https://account.xiaomi.com/pass/serviceLogin?_json=true&sid=mijia&deviceId={device_id}&_locale=zh_CN"
-        async with s.get(url, headers=headers, ssl=False) as r:
-            raw = await r.read()
-            service_data = json.loads(raw[11:])
+        log.info("QR Step1: %s", url[:80])
+        try:
+            async with s.get(url, headers=headers, ssl=False) as r:
+                raw = await r.read()
+        except Exception as e:
+            await s.close()
+            return {"ok": False, "msg": f"无法连接小米服务器: {e}"}
+
+        # 尝试解析响应（去掉可能的 &&& 前缀）
+        text = raw.decode("utf-8", errors="replace")
+        try:
+            service_data = json.loads(text) if text.startswith("{") else json.loads(text[11:])
+        except Exception:
+            await s.close()
+            return {"ok": False, "msg": f"小米返回异常: {text[:200]}"}
+
+        log.info("QR Step1 resp: code=%s", service_data.get("code"))
         if service_data.get("code") == 0:
             await s.close()
             return {"ok": False, "msg": "服务异常，请稍后重试"}
+
         location = service_data.get("location", "")
         if not location:
             await s.close()
-            return {"ok": False, "msg": "无法获取登录入口: " + str(service_data)}
+            return {"ok": False, "msg": "无法获取登录入口"}
 
         # Step 2: 获取二维码
-        from urllib.parse import parse_qs, urlparse
-        loc_params = {k: v[0] for k, v in parse_qs(urlparse(location).query).items()}
+        from urllib.parse import urlencode
         login_url = "https://account.xiaomi.com/longPolling/loginUrl"
-        full_url = login_url + "?" + "&".join(f"{k}={v}" for k, v in loc_params.items())
-        async with s.get(full_url, headers=headers, ssl=False) as r:
-            raw = await r.read()
-            login_data = json.loads(raw[11:])
-        await s.close()
+        full_url = login_url + "?" + location.split("?")[1] if "?" in location else login_url + "?" + location
+        try:
+            async with s.get(full_url, headers=headers, ssl=False) as r:
+                raw = await r.read()
+        except Exception as e:
+            await s.close()
+            return {"ok": False, "msg": f"获取二维码网络失败: {e}"}
 
+        text = raw.decode("utf-8", errors="replace")
+        try:
+            login_data = json.loads(text) if text.startswith("{") else json.loads(text[11:])
+        except Exception:
+            await s.close()
+            return {"ok": False, "msg": f"二维码接口返回异常: {text[:200]}"}
+
+        await s.close()
         qr_url = login_data.get("qr", login_data.get("loginUrl", ""))
         lp_url = login_data.get("lp", "")
         if not qr_url or not lp_url:
-            return {"ok": False, "msg": "获取二维码失败: " + str(login_data)}
+            return {"ok": False, "msg": "获取二维码失败: " + str(list(login_data.keys()))}
 
-        # 保存状态
         _qr_state["lp_url"] = lp_url
         _qr_state["device_id"] = device_id
         _qr_state["ready"] = True
-        log.info("QR 登录二维码已生成，等待扫码...")
+        log.info("QR 登录二维码已生成")
         return {"ok": True, "qr_url": qr_url, "msg": "请用米家 App 扫描二维码"}
     except Exception as e:
         log.exception("QR 登录异常: %s", e)
@@ -1150,7 +1173,12 @@ async def qr_login_poll():
         timeout = aiohttp.ClientTimeout(total=8)
         async with s.get(lp_url, headers=headers, ssl=False, timeout=timeout) as r:
             raw = await r.read()
-            lp_data = json.loads(raw[11:])
+        text = raw.decode("utf-8", errors="replace")
+        try:
+            lp_data = json.loads(text) if text.startswith("{") else json.loads(text[11:])
+        except Exception:
+            await s.close()
+            return {"ok": False, "done": False, "msg": f"轮询异常: {text[:100]}"}
         # 检查是否扫码成功
         if lp_data.get("psecurity") and lp_data.get("userId"):
             # Step 3: 获取 serviceToken
