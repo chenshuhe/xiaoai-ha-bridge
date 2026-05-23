@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.2.0"
+VERSION = "3.6.4"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -36,6 +36,9 @@ WEB_PORT = 47521
 LATEST_ASK_API = "https://userprofile.mina.mi.com/device_profile/v2/conversation?source=dialogu&hardware={hardware}&timestamp={timestamp}&limit=2"
 COOKIE_TEMPLATE = "deviceId={device_id}; serviceToken={service_token}; userId={user_id}"
 GET_ASK_BY_MINA = ["M01"]
+
+# QR 扫码登录状态
+_qr_state: dict = {}
 
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -66,6 +69,10 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+# 接入 miservice 库的 DEBUG 日志，便于诊断登录问题
+logging.getLogger("miservice").setLevel(logging.DEBUG)
+logging.getLogger("miservice.miaccount").setLevel(logging.DEBUG)
 
 # ──────────────── 运行状态 ────────────────
 bridge_state = {
@@ -403,26 +410,91 @@ async def bridge_loop():
 
     _bridge_session = aiohttp.ClientSession()
     try:
+        from miservice.miaccount import get_random
+
+        # ── 登录（三级尝试，参考 xiaomusic 的 passToken 注入绕过 SMS） ──
         account = MiAccount(_bridge_session, mi_cfg["username"], mi_cfg["password"],
                            str(TOKEN_PATH) if TOKEN_PATH.parent.exists() else None)
         _set_token(account, cfg)
-        log.info("正在登录小米账号...")
-        ok = await account.login("micoapi")
-        if not ok:
-            bridge_state["error"] = "小米账号登录失败，请在页面中先通过 Cookie 验证登录"
+
+        if not isinstance(account.token, dict):
+            account.token = {'deviceId': get_random(16).upper()}
+
+        na = None
+        logged_in = False
+
+        # 尝试1: 用 passToken 绕过密码步骤（xiaomusic 做法，不需要 SMS）
+        if account.token.get('passToken'):
+            log.info("尝试 passToken 登录...")
+            try:
+                ok = await account.login("micoapi")
+                if ok:
+                    logged_in = True
+            except Exception as e:
+                log.warning("passToken 登录异常: %s，尝试其他方式", e)
+
+        # 尝试2: Cookie 注入到 session 再直接调 device_list
+        if not logged_in:
+            cookie_text = mi_cfg.get("cookie_text", "")
+            if cookie_text:
+                log.info("尝试 Cookie 注入登录...")
+                try:
+                    from http.cookies import SimpleCookie
+                    sc = SimpleCookie()
+                    sc.load(cookie_text)
+                    cookies = {k: m.value for k, m in sc.items()}
+                    if cookies.get('userId') and (cookies.get('passToken') or cookies.get('serviceToken')):
+                        import yarl
+                        sc2 = SimpleCookie()
+                        for k, v in cookies.items():
+                            try:
+                                sc2[k] = v
+                            except Exception:
+                                pass
+                        for domain in ['account.xiaomi.com', '.mina.mi.com']:
+                            _bridge_session.cookie_jar.update_cookies(sc2, yarl.URL(f'https://{domain}/'))
+                        account2 = MiAccount(_bridge_session, mi_cfg["username"], mi_cfg["password"], str(TOKEN_PATH))
+                        account2.token = {
+                            'deviceId': cookies.get('deviceId', get_random(16).upper()),
+                            'userId': cookies['userId'],
+                            'passToken': cookies.get('passToken', ''),
+                        }
+                        resp = await account2._serviceLogin('serviceLogin?sid=micoapi&_json=true')
+                        if resp.get('code') != 0:
+                            raise Exception(f"Cookie 验证失败: {resp.get('description','')}")
+                        account2.token['userId'] = str(resp.get('userId', account2.token['userId']))
+                        account2.token['micoapi'] = (
+                            resp.get('psecurity', resp.get('ssecurity', '')),
+                            cookies.get('serviceToken', ''),
+                        )
+                        account = account2
+                        na = MiNAService(account)
+                        _save_auth_and_token(account)
+                        logged_in = True
+                        log.info("Cookie 注入登录成功")
+                except Exception as e:
+                    log.warning("Cookie 注入失败: %s", e)
+
+        # 尝试3: 密码登录（会触发 SMS 验证）
+        if not logged_in:
+            log.info("尝试密码登录...")
+            try:
+                ok = await account.login("micoapi")
+                if ok:
+                    logged_in = True
+            except Exception as e:
+                log.warning("密码登录异常: %s", e)
+
+        if not logged_in:
+            bridge_state["error"] = ("登录失败，请打开配置页面 → 在「Cookie 登录」输入框中粘贴浏览器 Cookie → 点测试连接。"
+                                     "Cookie 获取方法：浏览器打开 account.xiaomi.com → F12 → Application → Cookies → 复制全部")
             bridge_state["running"] = False
             return
 
-        # 保存 token 到文件
-        try:
-            TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-            if hasattr(account, 'token') and account.token:
-                with open(TOKEN_PATH, "w", encoding="utf-8") as f:
-                    json.dump(account.token, f)
-        except Exception:
-            pass
-
-        na = MiNAService(account)
+        # 保存 token
+        _save_auth_and_token(account)
+        if na is None:
+            na = MiNAService(account)
 
         # 获取设备列表
         try:
@@ -457,7 +529,7 @@ async def bridge_loop():
                     sc[k] = v
                 except Exception:
                     pass
-            for domain in ['account.xiaomi.com', 'api2.mina.mi.com']:
+            for domain in ['account.xiaomi.com', '.mina.mi.com']:
                 _bridge_session.cookie_jar.update_cookies(sc, yarl.URL(f'https://{domain}/'))
 
         ha_ok = await ha.test_connection(_bridge_session)
@@ -498,11 +570,14 @@ async def bridge_loop():
                         continue
                     last_timestamp[device_id] = ts
 
-                    # 提取用户问题
+                    # 提取用户问题和助手回复
                     query = _extract_query(rec)
+                    answer = _extract_answer(rec)
                     if not query:
                         continue
-                    log.info("🎤 收到: %s", query)
+                    log.info("🎤 用户: %s", query)
+                    if answer:
+                        log.info("🤖 小爱: %s", answer)
                     action = parser.parse(query)
                     if action:
                         domain = action.pop("domain")
@@ -587,6 +662,14 @@ async def _delayed_call(ha: HAClient, domain: str, service: str,
         log.info("⏰ 定时任务完成: %s/%s → %s", domain, service, "成功" if ok else "失败")
     except Exception as e:
         log.error("⏰ 定时任务异常: %s", e)
+
+
+def _extract_answer(rec: dict) -> str:
+    """从记录中提取小爱助手的回复"""
+    answers = rec.get("answers", [])
+    if answers:
+        return answers[0].get("tts", {}).get("text", "").strip() or ""
+    return ""
 
 
 def _extract_query(rec: dict) -> str:
@@ -706,6 +789,7 @@ class TestXiaomiRequest(BaseModel):
     username: str = ""
     password: str = ""
     use_saved: bool = False
+    cookie_text: str = ""
 
 
 # 70016 错误码的友好提示映射
@@ -738,15 +822,129 @@ async def test_xiaomi(req: TestXiaomiRequest):
     if _pending_session and not _pending_session.closed:
         await _pending_session.close()
 
-    s = aiohttp.ClientSession()
     try:
-        # 参考 xiaomusic login_miboy：先注入 token，再调 login("micoapi")
-        account = MiAccount(s, username, password, str(TOKEN_PATH))
-        _set_token(account, cfg)
-        ok = await account.login("micoapi")
-        if not ok:
+        from miservice.miaccount import get_random
+
+        # ── 方式1：浏览器 Cookie 直接登录 ──
+        cookie_text = req.cookie_text or mi.get("cookie_text", "")
+        if cookie_text and not cookie_text.startswith("https://"):
+            log.info("尝试用 Cookie 直接登录...")
+            cs = aiohttp.ClientSession()
+            try:
+                from http.cookies import SimpleCookie
+                sc = SimpleCookie()
+                sc.load(cookie_text)
+                cookies = {k: m.value for k, m in sc.items()}
+                if cookies.get('userId') and cookies.get('passToken'):
+                    import yarl
+                    sc2 = SimpleCookie()
+                    for k, v in cookies.items():
+                        try: sc2[k] = v
+                        except Exception: pass
+                    for domain in ['account.xiaomi.com', '.mina.mi.com']:
+                        cs.cookie_jar.update_cookies(sc2, yarl.URL(f'https://{domain}/'))
+                    acct = MiAccount(cs, username, password, str(TOKEN_PATH))
+                    acct.token = {
+                        'deviceId': cookies.get('deviceId', get_random(16).upper()),
+                        'userId': cookies['userId'],
+                        'passToken': cookies['passToken'],
+                    }
+                    resp = await acct._serviceLogin('serviceLogin?sid=micoapi&_json=true')
+                    if resp.get('code') != 0:
+                        raise Exception(f"Cookie 验证失败: {resp.get('description','')}")
+                    acct.token['userId'] = str(resp.get('userId', acct.token['userId']))
+                    acct.token['micoapi'] = (
+                        resp.get('psecurity', resp.get('ssecurity', '')),
+                        cookies.get('serviceToken', ''),
+                    )
+                    _save_auth_and_token(acct)
+                    na = MiNAService(acct)
+                    devices = await na.device_list()
+                    if not mi.get("cookie_text"):
+                        save_config({**cfg, "xiaomi": {**mi, "cookie_text": cookie_text}})
+                    await cs.close()
+                    if not devices:
+                        return {"ok": True, "msg": "Cookie 登录成功，但未发现小爱音箱设备", "devices": []}
+                    return {"ok": True, "msg": f"Cookie 登录成功，发现 {len(devices)} 台设备", "devices": devices}
+            except Exception as e:
+                log.warning("Cookie 直接登录失败: %s", e)
+            finally:
+                if not cs.closed:
+                    await cs.close()
+
+        # ── 方式2：纯密码登录（不加载缓存 token，避免 passToken 干扰） ──
+        s = aiohttp.ClientSession()
+        account = MiAccount(s, username, password, None)
+        if not account.token or not isinstance(account.token, dict):
+            account.token = {'deviceId': get_random(16).upper()}
+
+        log.info("正在密码登录 %s ...", username)
+        resp = await account._serviceLogin('serviceLogin?sid=micoapi&_json=true')
+        if resp.get('code') != 0:
+            data = {
+                '_json': 'true',
+                'qs': resp['qs'],
+                'sid': resp['sid'],
+                '_sign': resp['_sign'],
+                'callback': resp['callback'],
+                'user': username,
+                'hash': __import__('hashlib').md5(password.encode()).hexdigest().upper(),
+            }
+            resp = await account._serviceLogin('serviceLoginAuth2', data)
+            if resp.get('code') != 0:
+                desc = resp.get('description', resp.get('desc', ''))
+                code = resp.get('code', '')
+                hint = _ERROR_HINTS.get(code, '')
+                msg = f"{desc} (code:{code})"
+                if hint:
+                    msg += f"\n{hint}"
+                await s.close()
+                return {"ok": False, "msg": msg}
+
+        # 检查是否需要短信验证
+        if resp.get('securityStatus', 0) & 16:
+            notif_url = resp.get('notificationUrl', '')
+            if not notif_url:
+                verify_url = "https://account.xiaomi.com"
+            elif notif_url.startswith("https://") or notif_url.startswith("http://"):
+                verify_url = notif_url
+            elif notif_url.startswith("https//"):
+                verify_url = notif_url.replace("https//", "https://", 1)
+            elif notif_url.startswith("//"):
+                verify_url = f"https:{notif_url}"
+            elif notif_url.startswith("/"):
+                verify_url = f"https://account.xiaomi.com{notif_url}"
+            else:
+                verify_url = f"https://account.xiaomi.com/{notif_url}"
+
+            _pending_login.update({
+                'ssecurity': resp.get('ssecurity', ''),
+                'nonce': resp.get('nonce', ''),
+                'location': resp.get('location', ''),
+                'userId': resp.get('userId', ''),
+                'passToken': resp.get('passToken', ''),
+                'username': username,
+                'password': password,
+            })
+            _pending_session = s
+            return {
+                "ok": False,
+                "msg": "密码验证通过，但需要手机验证码确认。\n①复制下方链接在浏览器中打开 ②完成短信验证 ③将跳转后页面的完整 Cookie 粘贴到下方输入框",
+                "need_verify": True,
+                "verify_url": verify_url,
+            }
+
+        # 登录成功
+        if not resp.get('ssecurity') or not resp.get('location'):
             await s.close()
-            return {"ok": False, "msg": "登录失败，请检查账号密码或尝试 Cookie 验证登录"}
+            return {"ok": False, "msg": f"登录响应缺少必要字段: {list(resp.keys())}"}
+
+        account.token['userId'] = resp['userId']
+        account.token['passToken'] = resp['passToken']
+        serviceToken = await account._securityTokenService(
+            resp['location'], resp['nonce'], resp['ssecurity']
+        )
+        account.token['micoapi'] = (resp['ssecurity'], serviceToken)
 
         _save_auth_and_token(account)
         na = MiNAService(account)
@@ -760,8 +958,7 @@ async def test_xiaomi(req: TestXiaomiRequest):
             "devices": devices,
         }
     except Exception as e:
-        if not s.closed:
-            await s.close()
+        log.exception("test_xiaomi 异常: %s", e)
         return {"ok": False, "msg": f"请求失败: {e}"}
 
 
@@ -771,7 +968,7 @@ class XiaomiVerifyRequest(BaseModel):
 
 @app.post("/api/test/xiaomi/verify")
 async def xiaomi_verify(req: XiaomiVerifyRequest):
-    """用户粘贴浏览器 cookie，注入到 session 中完成登录（参考 xiaomusic 方式）"""
+    """处理短信验证回调：支持 STS URL 或浏览器 Cookie"""
     global _pending_session
     try:
         from miservice import MiAccount, MiNAService
@@ -783,72 +980,229 @@ async def xiaomi_verify(req: XiaomiVerifyRequest):
 
     username = _pending_login['username']
     password = _pending_login['password']
+    pending = dict(_pending_login)
 
     if not req.cookie_text:
-        return {"ok": False, "msg": "请粘贴浏览器中的 Cookie 内容"}
+        return {"ok": False, "msg": "请粘贴短信验证完成后的跳转 URL"}
 
-    # 使用 SimpleCookie 解析（参考 xiaomusic parse_cookie_string_to_dict）
+    # ── 方式A：短信验证回调 URL（自动获取 serviceToken）──
+    if req.cookie_text.startswith("https://api2.mina.mi.com/sts"):
+        log.info("检测到 STS 回调 URL，自动获取 serviceToken...")
+        s = aiohttp.ClientSession()
+        try:
+            # 用 pending session 的 cookies 请求 STS 端点
+            if _pending_session and not _pending_session.closed:
+                import yarl
+                for domain in ['account.xiaomi.com', '.mina.mi.com']:
+                    pending = _pending_session.cookie_jar.filter_cookies(yarl.URL(f'https://{domain}/'))
+                    s.cookie_jar.update_cookies(pending, yarl.URL(f'https://{domain}/'))
+            async with s.get(req.cookie_text, timeout=aiohttp.ClientTimeout(total=15)):
+                pass
+            sts_cookies = {k: v.value for k, v in
+                           s.cookie_jar.filter_cookies(yarl.URL('https://api2.mina.mi.com/')).items()}
+            service_token = sts_cookies.get('serviceToken', '')
+            if not service_token:
+                raise Exception("未从 STS 响应中获取到 serviceToken，请重试")
+            log.info("已获取 serviceToken: %s...", service_token[:30])
+        except Exception as e:
+            await s.close()
+            return {"ok": False, "msg": f"STS 请求失败: {e}"}
+
+        # 构造 token
+        from miservice.miaccount import get_random
+        account = MiAccount(s, username, password, str(TOKEN_PATH))
+        account.token = {
+            'deviceId': pending.get('deviceId', get_random(16).upper()),
+            'userId': pending.get('userId', ''),
+            'passToken': pending.get('passToken', ''),
+            'micoapi': (pending.get('ssecurity', ''), service_token),
+        }
+        _save_auth_and_token(account)
+        # 保存精简 cookie 到配置
+        simple_cookie = f"userId={account.token['userId']}; passToken={account.token['passToken']}; serviceToken={service_token}; deviceId={account.token['deviceId']}"
+        cfg = load_config()
+        cfg.setdefault("xiaomi", {})["cookie_text"] = simple_cookie
+        save_config(cfg)
+
+        na = MiNAService(account)
+        devices = await na.device_list()
+        await s.close()
+        _pending_login.clear()
+        _pending_session = None
+        if devices:
+            return {"ok": True, "msg": f"短信验证完成！发现 {len(devices)} 台设备", "devices": devices}
+        return {"ok": True, "msg": "短信验证完成，但未发现小爱音箱设备", "devices": []}
+
+    # ── 方式B：浏览器 Cookie ──
     from http.cookies import SimpleCookie
     sc = SimpleCookie()
     sc.load(req.cookie_text)
     cookies = {k: m.value for k, m in sc.items()}
 
-    user_id = cookies.get('userId', '')
-    pass_token = cookies.get('passToken', '')
-    service_token = cookies.get('serviceToken', '')
-
-    if not user_id:
-        return {"ok": False, "msg": "Cookie 中未找到 userId，请确认已登录小米账号"}
-    if not pass_token:
-        return {"ok": False, "msg": "Cookie 中未找到 passToken，请确认已登录小米账号"}
-    if not service_token:
-        return {"ok": False, "msg": "Cookie 中未找到 serviceToken，请确认已登录小米账号并复制完整 Cookie"}
+    if not cookies.get('userId'):
+        return {"ok": False, "msg": "未识别有效内容。请确认粘贴的是短信验证后的跳转 URL（以 https://api2.mina.mi.com/sts 开头）或完整 Cookie"}
+    if not cookies.get('passToken') or not cookies.get('serviceToken'):
+        return {"ok": False, "msg": "Cookie 缺少 passToken 或 serviceToken，请复制完整 Cookie"}
 
     try:
         if _pending_session and not _pending_session.closed:
             await _pending_session.close()
 
         s = aiohttp.ClientSession()
-        # 注入 cookie 到 session
         import yarl
         sc2 = SimpleCookie()
         for k, v in cookies.items():
-            try:
-                sc2[k] = v
-            except Exception:
-                pass
-        for domain in ['account.xiaomi.com', 'api2.mina.mi.com']:
+            try: sc2[k] = v
+            except Exception: pass
+        for domain in ['account.xiaomi.com', '.mina.mi.com']:
             s.cookie_jar.update_cookies(sc2, yarl.URL(f'https://{domain}/'))
 
         from miservice.miaccount import get_random
-
-        # 参考 xiaomusic 方式：注入 token 后调用 login("micoapi")
         account = MiAccount(s, username, password, str(TOKEN_PATH))
         account.token = {
             'deviceId': cookies.get('deviceId', get_random(16).upper()),
-            'userId': user_id,
-            'passToken': pass_token,
-            'micoapi': ('', service_token),
+            'userId': cookies['userId'],
+            'passToken': cookies['passToken'],
+            'micoapi': ('', cookies['serviceToken']),
         }
-
         na = MiNAService(account)
         devices = await na.device_list()
-
         _save_auth_and_token(account)
         cfg = load_config()
         cfg.setdefault("xiaomi", {})["cookie_text"] = req.cookie_text
         save_config(cfg)
-
         await s.close()
         _pending_login.clear()
         _pending_session = None
-
         if devices:
             return {"ok": True, "msg": f"登录成功，发现 {len(devices)} 台设备", "devices": devices}
         return {"ok": True, "msg": "登录成功，但未发现小爱音箱设备", "devices": []}
     except Exception as e:
         log.info(f"verify failed: {e}")
         return {"ok": False, "msg": f"验证失败: {e}"}
+
+
+# ──────────────── QR 扫码登录（绕过短信验证） ────────────────
+
+@app.post("/api/qr/login")
+async def qr_login_start():
+    """发起 QR 扫码登录，返回二维码链接"""
+    import string
+    try:
+        device_id = ''.join(__import__('random').choices(string.ascii_letters + string.digits, k=16)).upper()
+        headers = {
+            "User-Agent": "MiHome/6.0.103 (com.xiaomi.mihome; build:6.0.103.1; iOS 14.4.0) Alamofire/6.0.103",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        s = aiohttp.ClientSession()
+        # Step 1: serviceLogin
+        url = f"https://account.xiaomi.com/pass/serviceLogin?_json=true&sid=mijia&deviceId={device_id}&_locale=zh_CN"
+        async with s.get(url, headers=headers, ssl=False) as r:
+            raw = await r.read()
+            service_data = json.loads(raw[11:])
+        if service_data.get("code") == 0:
+            await s.close()
+            return {"ok": False, "msg": "服务异常，请稍后重试"}
+        location = service_data.get("location", "")
+        if not location:
+            await s.close()
+            return {"ok": False, "msg": "无法获取登录入口: " + str(service_data)}
+
+        # Step 2: 获取二维码
+        from urllib.parse import parse_qs, urlparse
+        loc_params = {k: v[0] for k, v in parse_qs(urlparse(location).query).items()}
+        login_url = "https://account.xiaomi.com/longPolling/loginUrl"
+        full_url = login_url + "?" + "&".join(f"{k}={v}" for k, v in loc_params.items())
+        async with s.get(full_url, headers=headers, ssl=False) as r:
+            raw = await r.read()
+            login_data = json.loads(raw[11:])
+        await s.close()
+
+        qr_url = login_data.get("qr", login_data.get("loginUrl", ""))
+        lp_url = login_data.get("lp", "")
+        if not qr_url or not lp_url:
+            return {"ok": False, "msg": "获取二维码失败: " + str(login_data)}
+
+        # 保存状态
+        _qr_state["lp_url"] = lp_url
+        _qr_state["device_id"] = device_id
+        _qr_state["ready"] = True
+        log.info("QR 登录二维码已生成，等待扫码...")
+        return {"ok": True, "qr_url": qr_url, "msg": "请用米家 App 扫描二维码"}
+    except Exception as e:
+        log.exception("QR 登录异常: %s", e)
+        return {"ok": False, "msg": f"QR 登录失败: {e}"}
+
+
+@app.get("/api/qr/poll")
+async def qr_login_poll():
+    """轮询扫码结果"""
+    if not _qr_state.get("ready"):
+        return {"ok": False, "done": False, "msg": "请先点击扫码登录"}
+
+    lp_url = _qr_state.get("lp_url", "")
+    headers = {
+        "User-Agent": "MiHome/6.0.103 (com.xiaomi.mihome; build:6.0.103.1; iOS 14.4.0) Alamofire/6.0.103",
+        "Connection": "keep-alive",
+    }
+    s = aiohttp.ClientSession()
+    try:
+        timeout = aiohttp.ClientTimeout(total=8)
+        async with s.get(lp_url, headers=headers, ssl=False, timeout=timeout) as r:
+            raw = await r.read()
+            lp_data = json.loads(raw[11:])
+        # 检查是否扫码成功
+        if lp_data.get("psecurity") and lp_data.get("userId"):
+            # Step 3: 获取 serviceToken
+            callback_url = lp_data.get("location", "")
+            if callback_url:
+                async with s.get(callback_url, headers=headers, ssl=False) as r:
+                    pass
+            sts_cookies = {k: v.value for k, v in
+                           s.cookie_jar.filter_cookies(
+                               __import__('yarl').URL('https://api2.mina.mi.com/')).items()}
+            service_token = sts_cookies.get("serviceToken", "")
+            if not service_token:
+                service_token = lp_data.get("serviceToken", "")
+
+            # 保存 auth 数据
+            auth_data = {
+                "passToken": lp_data["passToken"],
+                "userId": str(lp_data["userId"]),
+                "deviceId": _qr_state.get("device_id", ""),
+                "ssecurity": lp_data.get("ssecurity", lp_data.get("psecurity", "")),
+                "serviceToken": service_token,
+            }
+            AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(AUTH_PATH, "w", encoding="utf-8") as f:
+                json.dump(auth_data, f, ensure_ascii=False)
+            # 保存 .mi.token
+            token_data = {**auth_data, "micoapi": [auth_data["ssecurity"], service_token]}
+            TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(TOKEN_PATH, "w", encoding="utf-8") as f:
+                json.dump(token_data, f, ensure_ascii=False)
+            # 保存 cookie_text 到配置
+            cfg = load_config()
+            mi_cfg = cfg.get("xiaomi", {})
+            cookie_text = f"userId={auth_data['userId']}; passToken={auth_data['passToken']}; serviceToken={service_token}; deviceId={auth_data['deviceId']}"
+            cfg.setdefault("xiaomi", {})["cookie_text"] = cookie_text
+            save_config(cfg)
+            _qr_state.clear()
+            log.info("QR 扫码登录成功! userId=%s", auth_data["userId"])
+            await s.close()
+            return {"ok": True, "done": True, "msg": f"扫码登录成功! userId={auth_data['userId']}"}
+        else:
+            await s.close()
+            return {"ok": True, "done": False, "msg": "等待扫码中..."}
+    except asyncio.TimeoutError:
+        await s.close()
+        return {"ok": True, "done": False, "msg": "等待扫码中..."}
+    except Exception as e:
+        await s.close()
+        if "401" in str(e) or "timeout" in str(e).lower():
+            return {"ok": True, "done": False, "msg": "等待扫码中..."}
+        log.warning("QR 轮询异常: %s", e)
+        return {"ok": False, "done": False, "msg": f"轮询错误: {e}"}
 
 
 class TestHARequest(BaseModel):
@@ -891,7 +1245,49 @@ class TestRuleRequest(BaseModel):
 async def test_rule(req: TestRuleRequest):
     parser = IntentParser(req.rules)
     result = parser.parse(req.text)
-    return {"matched": result is not None, "action": result}
+    if not result:
+        return {"matched": False, "executed": False, "msg": "未匹配任何规则", "action": None}
+
+    # 匹配成功，执行 HA 调用
+    domain = result.pop("domain", "")
+    service = result.pop("service", "")
+    reply = result.pop("reply", "")
+    delay = result.pop("delay_minutes", None)
+
+    cfg = load_config()
+    ha_cfg = cfg.get("homeassistant", {})
+    ha_url = ha_cfg.get("url", "")
+    ha_token = ha_cfg.get("token", "")
+
+    if not ha_url or not ha_token:
+        return {"matched": True, "executed": False, "msg": "HA 未配置", "action": result}
+
+    if delay:
+        return {"matched": True, "executed": False, "msg": f"定时任务需通过桥接器执行（{delay}分钟延迟）", "action": result}
+
+    try:
+        async with aiohttp.ClientSession() as s:
+            ha_headers = {
+                "Authorization": f"Bearer {ha_token}",
+                "Content-Type": "application/json",
+            }
+            url = f"{ha_url.rstrip('/')}/api/services/{domain}/{service}"
+            async with s.post(url, json=result, headers=ha_headers,
+                             timeout=aiohttp.ClientTimeout(total=10)) as r:
+                ok = r.status in (200, 201)
+        return {
+            "matched": True,
+            "executed": ok,
+            "msg": f"HA 调用 {'成功' if ok else '失败'}（{r.status}）",
+            "action": {**result, "domain": domain, "service": service, "reply": reply},
+        }
+    except Exception as e:
+        return {
+            "matched": True,
+            "executed": False,
+            "msg": f"HA 调用异常: {e}",
+            "action": {**result, "domain": domain, "service": service, "reply": reply},
+        }
 
 
 # ──────────────── 启动 ────────────────

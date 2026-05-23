@@ -1,17 +1,15 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+# 国内用户可取消注释下一行加速 pip 安装
+# RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 先安装基础依赖，再安装 miservice（其 setup.py 依赖 aiohttp/aiofiles）
-RUN pip install --no-cache-dir aiohttp>=3.9.0 aiofiles>=23.0 pyyaml>=6.0 \
-    fastapi>=0.110.0 "uvicorn[standard]>=0.27.0" python-multipart>=0.0.9 \
-    && pip install --no-cache-dir --no-build-isolation miservice_fork>=2.9.0
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bridge.py .
 COPY web/ web/
-
 RUN mkdir -p config logs
 
 EXPOSE 47521

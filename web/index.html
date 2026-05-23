@@ -563,27 +563,43 @@ textarea { resize: vertical; min-height: 80px; }
             <div class="input-row">
               <input type="password" id="mi-password" placeholder="••••••••">
               <button class="btn btn-ghost" onclick="testXiaomi()">⚡ 测试连接</button>
+              <button class="btn btn-ghost" onclick="qrLogin()" style="color:var(--green)">📱 扫码登录</button>
+            </div>
+            <!-- QR 扫码登录区域 -->
+            <div id="qr-area" style="display:none;margin-top:12px;text-align:center">
+              <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px" id="qr-msg">请用米家 App 扫描二维码</div>
+              <img id="qr-img" src="" style="width:200px;height:200px;border:2px solid var(--border);border-radius:8px" alt="QR Code">
+              <div style="margin-top:8px;font-size:11px;color:var(--text-dim)" id="qr-status"></div>
             </div>
           </div>
         </div>
       </div>
-      <!-- 验证回调（需要短信验证时显示） -->
-      <div id="mi-verify-card" class="card" style="display:none">
-        <div class="card-title">◎ 手动验证登录</div>
+      <!-- Cookie 直接登录（推荐，无需短信验证，参考 xiaomusic） -->
+      <div id="mi-verify-card" class="card">
+        <div class="card-title">◎ Cookie 登录（推荐！无需短信验证）</div>
         <div style="font-size:12px;color:var(--text-dim);line-height:1.8;margin-bottom:10px">
-          小米账号需要短信验证，自动验证无法完成。请按以下步骤操作：<br>
-          ① 在浏览器中打开 <a href="https://account.xiaomi.com" target="_blank" style="color:var(--orange)">account.xiaomi.com</a> 并登录<br>
-          ② 按 <b style="color:var(--text)">F12</b> 打开开发者工具 → <b style="color:var(--text)">Network</b> 标签<br>
-          ③ 刷新页面，点击任意一个请求 → <b style="color:var(--text)">Headers</b> → 找到 <code>Cookie:</code> 行<br>
-          ④ 复制整个 Cookie 值粘贴到下方，点击「提交 Cookie」
+          如果您的浏览器已登录小米账号，直接复制 Cookie 即可跳过短信。<br>
+          ① 打开 <a href="https://account.xiaomi.com" target="_blank" style="color:var(--orange)">account.xiaomi.com</a>（确认已登录状态）<br>
+          ② 按 <b style="color:var(--text)">F12</b> → <b style="color:var(--text)">Application</b> → <b style="color:var(--text)">Cookies</b> → account.xiaomi.com<br>
+          ③ 复制所有 Cookie（含 <code>userId</code>、<code>passToken</code>、<code>serviceToken</code>）<br>
+          ④ 粘贴到下方 → 点击「测试连接」
         </div>
         <div class="form-field">
-          <label>浏览器 Cookie</label>
-          <textarea id="mi-cookie-text" rows="3" placeholder="粘贴从浏览器开发者工具复制的完整 Cookie 内容" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text);font-size:12px;resize:vertical"></textarea>
+          <label>浏览器 Cookie（有则自动用 Cookie 登录，留空则走密码登录）</label>
+          <textarea id="mi-cookie-text" rows="3" placeholder="userId=xxx; passToken=xxx; serviceToken=xxx; ..." style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text);font-size:12px;resize:vertical"></textarea>
         </div>
-        <div style="margin-top:8px">
-          <button class="btn btn-primary" onclick="submitXiaomiCookie()">提交 Cookie</button>
+      </div>
+      <!-- 短信验证回调（密码登录触发短信后显示） -->
+      <div id="mi-sts-card" class="card" style="display:none">
+        <div class="card-title">📱 短信验证 — 第2步：重新获取 Cookie</div>
+        <div style="font-size:12px;color:var(--text-dim);line-height:1.8;margin-bottom:10px">
+          ① 点击上方链接完成短信验证<br>
+          ② 验证成功后浏览器会跳转到新页面<br>
+          ③ 在该页面按 <b style="color:var(--text)">F12</b> → <b style="color:var(--text)">Application</b> → <b style="color:var(--text)">Cookies</b><br>
+          ④ 分别点击 <b style="color:var(--text)">account.xiaomi.com</b> 和 <b style="color:var(--text)">api2.mina.mi.com</b>，复制所有 Cookie<br>
+          ⑤ 粘贴到上方「Cookie 登录」输入框 → 点「测试连接」
         </div>
+        <div style="font-size:11px;color:var(--orange);margin-top:4px">提示：短信验证后 serviceToken 已刷新，此时复制 Cookie 即可永久免短信</div>
       </div>
       <!-- 设备列表（测试成功后动态显示） -->
       <div id="mi-device-list" class="card" style="display:none">
@@ -850,12 +866,14 @@ function showCtrlLoading(on) {
 
 // ── 保存配置 ──
 async function saveXiaomi() {
+  const old = cfg.xiaomi || {};
   cfg.xiaomi = {
     username: gv('mi-username'),
     password: gv('mi-password'),
     hardware: gv('mi-hardware'),
     device_did: gv('mi-did'),
     tts_reply: document.getElementById('mi-tts').checked,
+    cookie_text: old.cookie_text || '', // 保留 Cookie 登录保存的 token
   };
   await saveConfig('xiaomi');
 }
@@ -905,24 +923,51 @@ async function testXiaomi() {
   }
   showAlert(a, 'warn', '⟳ 正在登录并获取设备...');
   try {
+    const ct = document.getElementById('mi-cookie-text')?.value?.trim() || '';
     const r = await fetch('/api/test/xiaomi', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({username: gv('mi-username'), password: gv('mi-password'), use_saved: true})
+      body: JSON.stringify({username: gv('mi-username'), password: gv('mi-password'), use_saved: true, cookie_text: ct})
     });
     const d = await r.json();
     if (d.need_verify) {
       a.className = 'alert alert-warn show';
-      a.innerHTML = '⚠ ' + escHtml(d.msg) + '<br><a href="' + escAttr(d.verify_url) + '" target="_blank" style="color:var(--orange);word-break:break-all">点击此处打开验证页面完成短信验证</a><br><span style="color:var(--text-dim)">验证后请按下方说明从浏览器提取 token</span>';
-      document.getElementById('mi-verify-card').style.display = '';
+      a.innerHTML = '⚠ ' + escHtml(d.msg) + '<br><a href="' + escAttr(d.verify_url) + '" target="_blank" style="color:var(--orange);font-weight:bold;font-size:14px">📱 点击此处打开短信验证页面</a>';
+      // 显示 STS URL 输入区
+      document.getElementById('mi-sts-card').style.display = '';
     } else {
       showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '✓ ' : '✗ ') + d.msg);
-      if (!d.ok) document.getElementById('mi-verify-card').style.display = 'none';
+      document.getElementById('mi-sts-card').style.display = 'none';
     }
     if (d.ok && d.devices && d.devices.length > 0) {
       renderDeviceList(d.devices);
-    } else if (!d.need_verify) {
-      document.getElementById('mi-device-list').style.display = 'none';
+    }
+  } catch(e) {
+    showAlert(a, 'err', '✗ 请求失败: ' + e.message);
+  }
+}
+
+async function submitStsUrl() {
+  const a = document.getElementById('xiaomi-alert');
+  const url = document.getElementById('mi-sts-url').value.trim();
+  if (!url || !url.startsWith('https://api2.mina.mi.com/sts')) {
+    showAlert(a, 'err', '✗ 请粘贴短信验证后浏览器地址栏中的完整 URL（以 https://api2.mina.mi.com/sts 开头）');
+    return;
+  }
+  showAlert(a, 'warn', '⟳ 正在自动获取 token...');
+  try {
+    const r = await fetch('/api/test/xiaomi/verify', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({cookie_text: url})
+    });
+    const d = await r.json();
+    showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '✓ ' : '✗ ') + d.msg);
+    if (d.ok) {
+      document.getElementById('mi-sts-card').style.display = 'none';
+      if (d.devices && d.devices.length > 0) {
+        renderDeviceList(d.devices);
+      }
     }
   } catch(e) {
     showAlert(a, 'err', '✗ 请求失败: ' + e.message);
@@ -932,8 +977,14 @@ async function testXiaomi() {
 async function submitXiaomiCookie() {
   const a = document.getElementById('xiaomi-alert');
   const ct = document.getElementById('mi-cookie-text').value.trim();
-  if (!ct || !ct.includes('userId')) {
-    showAlert(a, 'err', '✗ 请粘贴包含 userId 的完整 Cookie 内容');
+  // 支持 STS URL 和 Cookie 两种格式
+  if (!ct) { showAlert(a, 'err', '✗ 请粘贴内容'); return; }
+  if (ct.startsWith('https://')) {
+    document.getElementById('mi-sts-url').value = ct;
+    return submitStsUrl();
+  }
+  if (!ct.includes('userId')) {
+    showAlert(a, 'err', '✗ Cookie 中缺少 userId，如果是短信验证后的跳转 URL 请粘贴到上方输入框');
     return;
   }
   showAlert(a, 'warn', '⟳ 正在注入 Cookie 并登录...');
@@ -945,15 +996,62 @@ async function submitXiaomiCookie() {
     });
     const d = await r.json();
     showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '✓ ' : '✗ ') + d.msg);
-    if (d.ok) {
-      document.getElementById('mi-verify-card').style.display = 'none';
-      if (d.devices && d.devices.length > 0) {
-        renderDeviceList(d.devices);
-      }
+    if (d.ok && d.devices && d.devices.length > 0) {
+      renderDeviceList(d.devices);
     }
   } catch(e) {
     showAlert(a, 'err', '✗ 验证请求失败: ' + e.message);
   }
+}
+
+// ── QR 扫码登录（绕过短信验证） ──
+let qrPollTimer = null;
+async function qrLogin() {
+  const a = document.getElementById('xiaomi-alert');
+  showAlert(a, 'warn', '⟳ 正在生成二维码...');
+  try {
+    const r = await fetch('/api/qr/login', {method:'POST'});
+    const d = await r.json();
+    if (d.ok && d.qr_url) {
+      document.getElementById('qr-img').src = d.qr_url;
+      document.getElementById('qr-area').style.display = '';
+      document.getElementById('qr-msg').textContent = '请用米家 App 扫描二维码';
+      document.getElementById('qr-status').textContent = '等待扫码...';
+      showAlert(a, 'warn', '📱 请用米家 App 扫描下方二维码');
+      if (qrPollTimer) clearInterval(qrPollTimer);
+      qrPollTimer = setInterval(pollQrLogin, 3000);
+    } else {
+      showAlert(a, 'err', '✗ ' + (d.msg||'生成二维码失败'));
+    }
+  } catch(e) {
+    showAlert(a, 'err', '✗ ' + e.message);
+  }
+}
+
+async function pollQrLogin() {
+  try {
+    const r = await fetch('/api/qr/poll');
+    const d = await r.json();
+    if (d.done) {
+      clearInterval(qrPollTimer);
+      document.getElementById('qr-status').textContent = d.msg;
+      document.getElementById('qr-area').style.display = 'none';
+      const a = document.getElementById('xiaomi-alert');
+      showAlert(a, 'ok', '✓ ' + d.msg);
+      // 刷新设备列表
+      const r2 = await fetch('/api/test/xiaomi', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({username: gv('mi-username'), password: gv('mi-password'), use_saved: true})
+      });
+      const d2 = await r2.json();
+      if (d2.ok && d2.devices && d2.devices.length > 0) {
+        renderDeviceList(d2.devices);
+      }
+    } else if (!d.ok) {
+      document.getElementById('qr-status').textContent = d.msg || '错误';
+    }
+  } catch(e) {}
 }
 
 function renderDeviceList(devices) {
@@ -1013,7 +1111,7 @@ async function testHA() {
 const DOMAIN_INFO = {
   light:       { name:'灯光', icon:'💡', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[{key:'brightness_pct',label:'亮度百分比',placeholder:'{0}'}] },
   switch:      { name:'开关/插座', icon:'🔌', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[] },
-  climate:     { name:'空调/温控', icon:'🌡️', services:{turn_on:'打开',turn_off:'关闭',set_temperature:'设置温度',set_hvac_mode:'设置模式'}, extras:[{key:'temperature',label:'目标温度',placeholder:'{0}'},{key:'delay_minutes',label:'延迟关（分钟）',placeholder:'{0}'}] },
+  climate:     { name:'空调/温控', icon:'🌡️', services:{set_hvac_mode:'打开',turn_off:'关闭',set_temperature:'设置温度'}, extras:[{key:'hvac_mode',label:'运行模式(cool/heat/dry)',placeholder:'cool'},{key:'temperature',label:'目标温度',placeholder:'{0}'},{key:'delay_minutes',label:'延迟关（分钟）',placeholder:'{0}'}] },
   scene:       { name:'场景', icon:'🎬', services:{turn_on:'激活'}, extras:[] },
   media_player:{ name:'媒体/电视', icon:'📺', services:{turn_on:'打开',turn_off:'关闭',media_play:'播放',media_pause:'暂停'}, extras:[] },
   script:      { name:'脚本', icon:'⚡', services:{turn_on:'执行'}, extras:[] },
@@ -1204,8 +1302,8 @@ async function testRule() {
   const d = await r.json();
   const el = document.getElementById('test-result');
   if (d.matched) {
-    el.style.color = 'var(--green)';
-    el.textContent = '✓ 匹配成功\n\n' + JSON.stringify(d.action, null, 2);
+    el.style.color = d.executed ? 'var(--green)' : 'var(--orange)';
+    el.textContent = (d.executed ? '✓ 已执行' : '⚠ 匹配成功但未执行') + '\n' + (d.msg || '') + '\n\n' + JSON.stringify(d.action, null, 2);
   } else {
     el.style.color = 'var(--red)';
     el.textContent = '✗ 未匹配任何规则';
