@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.6.5"
+VERSION = "3.8.0"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -71,8 +71,8 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # 接入 miservice 库的 DEBUG 日志，便于诊断登录问题
-logging.getLogger("miservice").setLevel(logging.DEBUG)
-logging.getLogger("miservice.miaccount").setLevel(logging.DEBUG)
+logging.getLogger("miservice").setLevel(logging.INFO)
+logging.getLogger("miservice.miaccount").setLevel(logging.INFO)
 
 # ──────────────── 运行状态 ────────────────
 bridge_state = {
@@ -122,6 +122,13 @@ def _default_config() -> dict:
             "url": "http://homeassistant.local:8123",
             "token": "",
         },
+        "openai": {
+            "api_base": "https://api.openai.com",
+            "api_key": "",
+            "model": "gpt-4o-mini",
+        },
+        "ai_mode": False,
+        "device_aliases": {},
         "poll_interval_seconds": 2,
         "intent_rules": [
             {
@@ -356,10 +363,11 @@ async def _get_latest_ask_from_xiaoai(session: aiohttp.ClientSession, device_id:
     for i in range(3):
         try:
             url = LATEST_ASK_API.format(
-                hardware=hardware, timestamp=str(int(time.time() * 1000))
+                hardware=hardware, timestamp=str(last_ts)
             )
             timeout = aiohttp.ClientTimeout(total=15)
             r = await session.get(url, timeout=timeout, cookies=cookies)
+            log.debug("HTTP轮询: %s → status=%s", url[:120], r.status)
             if r.status != 200:
                 log.warning("HTTP 轮询返回 %s (第%d次)", r.status, i + 1)
                 if i == 2 and r.status == 401:
@@ -556,17 +564,20 @@ async def bridge_loop():
                 if hardware in GET_ASK_BY_MINA:
                     records = await _get_latest_ask_by_mina(na, device_id)
                 else:
+                    fetch_ts = last_timestamp.get(device_id, cur_ts)
                     records, _ = await _get_latest_ask_from_xiaoai(
-                        _bridge_session, device_id, hardware or "L06A", cur_ts
+                        _bridge_session, device_id, hardware or "L06A", fetch_ts
                     )
 
                 for rec in records or []:
                     # 时间戳去重
                     ts = rec.get("time", rec.get("timestamp_ms", 0))
                     if not ts:
+                        log.warning("轮询记录缺少 time 字段, rec keys=%s", list(rec.keys())[:5])
                         continue
                     ts = int(ts)
                     if ts <= last_timestamp.get(device_id, 0):
+                        log.debug("跳过旧记录 ts=%s <= last=%s", ts, last_timestamp.get(device_id, 0))
                         continue
                     last_timestamp[device_id] = ts
 
@@ -574,11 +585,19 @@ async def bridge_loop():
                     query = _extract_query(rec)
                     answer = _extract_answer(rec)
                     if not query:
+                        log.debug("跳过空查询记录 ts=%s answer=%s", ts, (answer or '')[:40])
                         continue
                     log.info("🎤 用户: %s", query)
                     if answer:
                         log.info("🤖 小爱: %s", answer)
                     action = parser.parse(query)
+                    # AI 托管模式：正则未匹配时用 AI 解析
+                    if not action and cfg.get("ai_mode") and cfg.get("openai", {}).get("api_key"):
+                        ai_result = await ai_parse_command(query)
+                        if ai_result:
+                            action = ai_result
+                            log.info("🤖 AI 解析: %s → %s/%s", query,
+                                     ai_result.get("domain"), ai_result.get("service"))
                     if action:
                         domain = action.pop("domain")
                         service = action.pop("service")
@@ -737,6 +756,8 @@ async def get_config():
         cfg["xiaomi"]["password"] = "••••••••"
     if cfg.get("homeassistant", {}).get("token"):
         cfg["homeassistant"]["token"] = "••••••••"
+    if cfg.get("openai", {}).get("api_key"):
+        cfg["openai"]["api_key"] = "••••••••"
     return cfg
 
 
@@ -1082,6 +1103,256 @@ async def xiaomi_verify(req: XiaomiVerifyRequest):
         return {"ok": False, "msg": f"验证失败: {e}"}
 
 
+# ──────────────── HA 设备列表 ────────────────
+
+@app.get("/api/devices")
+async def get_ha_devices():
+    """获取 HA 所有可控设备（精简列表，供 AI 使用）"""
+    cfg = load_config()
+    ha_cfg = cfg.get("homeassistant", {})
+    if not ha_cfg.get("token"):
+        return {"ok": False, "devices": [], "msg": "HA 未配置"}
+
+    ha_headers = {
+        "Authorization": f"Bearer {ha_cfg['token']}",
+        "Content-Type": "application/json",
+    }
+    base = ha_cfg["url"].rstrip("/")
+
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(f"{base}/api/states", headers=ha_headers,
+                            timeout=aiohttp.ClientTimeout(total=10)) as r:
+                if r.status != 200:
+                    return {"ok": False, "devices": [], "msg": f"HA 返回 {r.status}"}
+                all_states = await r.json()
+    except Exception as e:
+        return {"ok": False, "devices": [], "msg": f"无法连接 HA: {e}"}
+
+    # 只保留可控设备（排除 sensor、binary_sensor 等只读类）
+    controllable = {"light", "switch", "climate", "scene", "media_player", "script",
+                    "automation", "input_boolean", "fan", "cover", "lock", "vacuum", "button"}
+
+    devices = []
+    for s in all_states:
+        eid = s.get("entity_id", "")
+        domain = eid.split(".")[0] if "." in eid else ""
+        if domain not in controllable:
+            continue
+        attrs = s.get("attributes", {})
+        name = attrs.get("friendly_name", eid)
+        devices.append({
+            "name": name,
+            "entity_id": eid,
+            "domain": domain,
+            "state": s.get("state", ""),
+        })
+
+    # 附加别名
+    aliases = cfg.get("device_aliases", {})
+    for d in devices:
+        if d["entity_id"] in aliases:
+            d["alias"] = aliases[d["entity_id"]]
+
+    devices.sort(key=lambda d: (d["domain"], d["name"]))
+    return {"ok": True, "devices": devices, "count": len(devices)}
+
+
+# ──────────────── 设备别名管理 ────────────────
+
+@app.get("/api/aliases")
+async def get_aliases():
+    cfg = load_config()
+    return {"ok": True, "aliases": cfg.get("device_aliases", {})}
+
+
+class SaveAliasRequest(BaseModel):
+    entity_id: str
+    alias: str
+
+
+@app.post("/api/aliases")
+async def save_alias(req: SaveAliasRequest):
+    cfg = load_config()
+    aliases = cfg.setdefault("device_aliases", {})
+    alias = req.alias.strip()
+    if alias:
+        aliases[req.entity_id] = alias
+    else:
+        aliases.pop(req.entity_id, None)
+    save_config(cfg)
+    return {"ok": True}
+
+
+# ──────────────── AI 命令解析 ────────────────
+
+_AI_DOMAIN_ACTIONS: dict[str, list[str]] = {
+    "light": ["turn_on 打开", "turn_off 关闭", "toggle 切换"],
+    "switch": ["turn_on 打开", "turn_off 关闭", "toggle 切换"],
+    "climate": ["turn_on 打开", "turn_off 关闭", "set_temperature 设置温度",
+                "set_hvac_mode 设置模式(cool/heat/dry/fan_only/auto)"],
+    "scene": ["turn_on 激活"],
+    "media_player": ["turn_on 打开", "turn_off 关闭", "media_play 播放", "media_pause 暂停"],
+    "script": ["turn_on 执行"],
+    "automation": ["turn_on 启用", "turn_off 禁用"],
+    "input_boolean": ["turn_on 打开", "turn_off 关闭", "toggle 切换"],
+    "fan": ["turn_on 打开", "turn_off 关闭", "set_speed 设置风速"],
+    "cover": ["open_cover 打开", "close_cover 关闭", "stop_cover 停止"],
+    "lock": ["lock 锁定", "unlock 解锁"],
+    "vacuum": ["start 开始清扫", "stop 停止", "return_to_base 回充"],
+    "button": ["press 按下"],
+}
+
+
+def _build_ai_prompt(query: str, devices: list[dict], aliases: dict) -> str:
+    """构建发给 OpenAI 的 system + user prompt"""
+    import json as _json
+    device_list = []
+    for d in devices:
+        domain = d["domain"]
+        actions = _AI_DOMAIN_ACTIONS.get(domain, [])
+        entry = {
+            "name": d["name"],
+            "id": d["entity_id"],
+            "type": domain,
+            "state": d["state"],
+            "actions": actions,
+        }
+        eid = d["entity_id"]
+        if eid in aliases:
+            entry["alias"] = aliases[eid]
+        device_list.append(entry)
+
+    system = (
+        "你是 Home Assistant 语音助手。根据用户的自然语言指令，从设备列表中选择最匹配的设备并返回操作指令。\n"
+        "规则：\n"
+        "1. 优先使用设备的 alias（别名）来匹配用户指令\n"
+        "2. 如果用户提到房间名(主卧/客厅/餐厅/次卧/厨房/阳台/书房)，优先匹配名称含该房间的设备\n"
+        "3. 如果用户说温度数字，service 用 set_temperature，temperature 设为数字\n"
+        "4. 如果用户说百分比，对应 brightness_pct 或 volume_level\n"
+        "5. 如果没有匹配的设备或指令不明确，返回 {\"action\":\"none\"}\n"
+        "6. 只返回 JSON，不要任何其他文字。\n"
+        "返回格式：{\"entity_id\":\"...\",\"domain\":\"...\",\"service\":\"...\",<额外参数>, \"reply\":\"回复文字\"}"
+    )
+
+    user = f"用户指令: {query}\n\n可用设备:\n{_json.dumps(device_list, ensure_ascii=False, indent=2)}"
+    return system, user
+
+
+async def ai_parse_command(query: str) -> dict | None:
+    """用 OpenAI 解析用户指令，返回 HA action 或 None"""
+    cfg = load_config()
+    oai_cfg = cfg.get("openai", {})
+    api_key = oai_cfg.get("api_key", "")
+    if not api_key:
+        return None
+
+    ha_cfg = cfg.get("homeassistant", {})
+    if not ha_cfg.get("token"):
+        return None
+
+    # 获取设备列表
+    ha_headers = {
+        "Authorization": f"Bearer {ha_cfg['token']}",
+        "Content-Type": "application/json",
+    }
+    base = ha_cfg["url"].rstrip("/")
+    controllable = {"light", "switch", "climate", "scene", "media_player", "script",
+                    "automation", "input_boolean", "fan", "cover", "lock", "vacuum", "button"}
+
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(f"{base}/api/states", headers=ha_headers,
+                            timeout=aiohttp.ClientTimeout(total=8)) as r:
+                if r.status != 200:
+                    return None
+                all_states = await r.json()
+    except Exception:
+        return None
+
+    devices = []
+    for st in all_states:
+        eid = st.get("entity_id", "")
+        domain = eid.split(".")[0] if "." in eid else ""
+        if domain not in controllable:
+            continue
+        attrs = st.get("attributes", {})
+        devices.append({
+            "name": attrs.get("friendly_name", eid),
+            "entity_id": eid,
+            "domain": domain,
+            "state": st.get("state", ""),
+        })
+
+    aliases = cfg.get("device_aliases", {})
+    system_prompt, user_prompt = _build_ai_prompt(query, devices, aliases)
+    model = oai_cfg.get("model", "gpt-4o-mini")
+
+    try:
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0,
+            "max_tokens": 800,
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        api_base = oai_cfg.get("api_base", "https://api.openai.com").rstrip("/")
+        async with aiohttp.ClientSession() as s:
+            async with s.post(f"{api_base}/v1/chat/completions",
+                              json=payload, headers=headers,
+                              timeout=aiohttp.ClientTimeout(total=15)) as r:
+                if r.status != 200:
+                    body = await r.text()
+                    log.warning("AI API 返回 %s: %s", r.status, body[:300])
+                    return None
+                data = await r.json()
+
+        msg = data["choices"][0].get("message", {})
+        content = msg.get("content") or msg.get("reasoning_content") or ""
+        if not content:
+            log.warning("AI 返回空内容, response keys: %s", list(data.keys()))
+            if data.get("choices"):
+                log.warning("choice keys: %s, msg keys: %s",
+                           list(data["choices"][0].keys()),
+                           list(data["choices"][0].get("message", {}).keys()))
+            return None
+        content = content.strip()
+        log.info("AI raw content: %s", content[:200])
+
+        # 提取 JSON（可能被 markdown 包裹）
+        if "```" in content:
+            parts = content.split("```")
+            content = parts[1] if len(parts) > 1 else content
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+        # 尝试直接解析
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError:
+            # 尝试找到第一个 { 到最后一个 }
+            start = content.find("{")
+            end = content.rfind("}")
+            if start >= 0 and end > start:
+                content = content[start:end+1]
+                result = json.loads(content)
+            else:
+                raise
+
+        if result.get("action") == "none":
+            return None
+        return result
+    except Exception as e:
+        log.warning("AI 解析失败: %s, content was: %s", e, content[:200] if 'content' in dir() else 'N/A')
+        return None
+
+
 # ──────────────── QR 扫码登录（绕过短信验证） ────────────────
 
 @app.post("/api/qr/login")
@@ -1271,15 +1542,23 @@ class TestRuleRequest(BaseModel):
 
 @app.post("/api/test/rule")
 async def test_rule(req: TestRuleRequest):
+    # 先尝试正则匹配
     parser = IntentParser(req.rules)
     result = parser.parse(req.text)
-    if not result:
-        return {"matched": False, "executed": False, "msg": "未匹配任何规则", "action": None}
 
-    # 匹配成功，执行 HA 调用
+    # AI 托管：正则未匹配时用 AI 解析
+    ai_used = False
+    if not result:
+        cfg = load_config()
+        if cfg.get("ai_mode") and cfg.get("openai", {}).get("api_key"):
+            result = await ai_parse_command(req.text)
+            ai_used = True
+        if not result:
+            return {"matched": False, "executed": False, "msg": "未匹配任何规则", "action": None}
+
     domain = result.pop("domain", "")
     service = result.pop("service", "")
-    reply = result.pop("reply", "")
+    reply = result.pop("reply", "好的")
     delay = result.pop("delay_minutes", None)
 
     cfg = load_config()
@@ -1288,10 +1567,10 @@ async def test_rule(req: TestRuleRequest):
     ha_token = ha_cfg.get("token", "")
 
     if not ha_url or not ha_token:
-        return {"matched": True, "executed": False, "msg": "HA 未配置", "action": result}
+        return {"matched": True, "executed": False, "msg": "HA 未配置", "action": result, "ai_used": ai_used}
 
     if delay:
-        return {"matched": True, "executed": False, "msg": f"定时任务需通过桥接器执行（{delay}分钟延迟）", "action": result}
+        return {"matched": True, "executed": False, "msg": f"定时任务需通过桥接器执行（{delay}分钟延迟）", "action": result, "ai_used": ai_used}
 
     try:
         async with aiohttp.ClientSession() as s:
@@ -1306,8 +1585,9 @@ async def test_rule(req: TestRuleRequest):
         return {
             "matched": True,
             "executed": ok,
-            "msg": f"HA 调用 {'成功' if ok else '失败'}（{r.status}）",
+            "msg": f"{'🤖 AI' if ai_used else '📋 规则'} → HA {'成功' if ok else '失败'}（{r.status}）",
             "action": {**result, "domain": domain, "service": service, "reply": reply},
+            "ai_used": ai_used,
         }
     except Exception as e:
         return {
@@ -1315,6 +1595,7 @@ async def test_rule(req: TestRuleRequest):
             "executed": False,
             "msg": f"HA 调用异常: {e}",
             "action": {**result, "domain": domain, "service": service, "reply": reply},
+            "ai_used": ai_used,
         }
 
 

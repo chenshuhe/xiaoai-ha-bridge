@@ -349,6 +349,26 @@ textarea { resize: vertical; min-height: 80px; }
 .domain-icon { font-size: 14px; line-height: 1; }
 .extra-fields { display: contents; }
 
+/* ── 开关 toggle ── */
+.switch-label { display: flex; align-items: center; cursor: pointer; }
+.switch-label input[type=checkbox] { display: none; }
+.switch-slider {
+  width: 40px; height: 22px;
+  background: var(--bg0); border: 1px solid var(--border);
+  border-radius: 11px; position: relative; transition: .2s;
+}
+.switch-slider::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--text-dim); transition: .2s;
+}
+.switch-label input:checked + .switch-slider {
+  border-color: var(--green); background: var(--green-dim);
+}
+.switch-label input:checked + .switch-slider::after {
+  left: 20px; background: var(--green);
+}
+
 /* ── 测试区 ── */
 .test-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
 .test-input-row input { flex: 1; }
@@ -443,6 +463,9 @@ textarea { resize: vertical; min-height: 80px; }
       </div>
       <div class="nav-item" onclick="showPage('rules')" data-page="rules">
         <span class="nav-icon">⊞</span> 意图规则
+      </div>
+      <div class="nav-item" onclick="showPage('devices')" data-page="devices">
+        <span class="nav-icon">📋</span> 设备管理
       </div>
       <div class="nav-item" onclick="showPage('advanced')" data-page="advanced">
         <span class="nav-icon">⚙</span> 高级设置
@@ -691,6 +714,20 @@ textarea { resize: vertical; min-height: 80px; }
       <div class="rule-list" id="rule-list"></div>
     </div>
 
+    <!-- 设备管理 -->
+    <div class="page" id="page-devices">
+      <div class="page-header">
+        <div class="page-title">// DEVICE MANAGEMENT</div>
+        <div class="page-desc">查看 HA 设备并设置别名（AI 托管模式下可通过别名控制）</div>
+      </div>
+      <div id="devices-alert" class="alert"></div>
+      <div class="ctrl-bar">
+        <button class="btn btn-primary" onclick="loadDevices()">🔄 刷新设备列表</button>
+        <span style="color:var(--text-dim);font-size:12px;margin-left:12px" id="device-count"></span>
+      </div>
+      <div class="rule-list" id="device-list"></div>
+    </div>
+
     <!-- 高级 -->
     <div class="page" id="page-advanced">
       <div class="page-header">
@@ -708,6 +745,46 @@ textarea { resize: vertical; min-height: 80px; }
         </div>
         <div style="margin-top:10px;font-size:12px;color:var(--text-dim)">
           建议 2–5 秒。间隔太短可能触发小米限速，太长会有延迟感。
+        </div>
+      </div>
+      <!-- AI 托管 -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-title">🤖 AI 托管模式</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+          开启后，正则未匹配的语音指令将交给 OpenAI 自动解析。设备列表自动从 HA 获取。
+        </div>
+        <div class="form-grid">
+          <div class="form-field">
+            <label>AI 托管开关</label>
+            <label class="switch-label">
+              <input type="checkbox" id="adv-ai-mode" onchange="toggleAISettings()">
+              <span class="switch-slider"></span>
+              <span id="ai-mode-text" style="margin-left:8px;font-size:12px">关闭</span>
+            </label>
+          </div>
+          <div id="ai-settings" style="display:none;grid-column:1/-1">
+            <div class="form-field">
+              <label>API 提供商</label>
+              <select id="adv-ai-provider" onchange="onProviderChange()">
+                <option value="https://api.openai.com">OpenAI</option>
+                <option value="https://api.deepseek.com">DeepSeek</option>
+                <option value="https://api.siliconflow.cn">硅基流动 (SiliconFlow)</option>
+                <option value="custom">自定义</option>
+              </select>
+            </div>
+            <div class="form-field" id="ai-base-field">
+              <label>API Base URL</label>
+              <input type="text" id="adv-ai-base" value="https://api.openai.com" placeholder="https://api.openai.com">
+            </div>
+            <div class="form-field">
+              <label>API Key</label>
+              <input type="password" id="adv-ai-key" placeholder="sk-...">
+            </div>
+            <div class="form-field">
+              <label>模型</label>
+              <input type="text" id="adv-ai-model" value="gpt-4o-mini" placeholder="gpt-4o-mini">
+            </div>
+          </div>
         </div>
       </div>
       <button class="btn btn-primary" onclick="saveAdvanced()">↓ 保存</button>
@@ -756,6 +833,44 @@ function applyConfigToUI() {
   safeSet('ha-url', ha.url || '');
   safeSet('ha-token', ha.token || '');
   safeSet('adv-interval', cfg.poll_interval_seconds || 2);
+  // OpenAI
+  const oai = cfg.openai || {};
+  safeSet('adv-ai-key', oai.api_key || '');
+  safeSet('adv-ai-model', oai.model || 'gpt-4o-mini');
+  const base = oai.api_base || 'https://api.openai.com';
+  safeSet('adv-ai-base', base);
+  const sel = document.getElementById('adv-ai-provider');
+  const known = { 'https://api.openai.com': 0, 'https://api.deepseek.com': 1, 'https://api.siliconflow.cn': 2 };
+  sel.selectedIndex = known[base] !== undefined ? known[base] : 3;
+  if (sel.selectedIndex >= 3) document.getElementById('adv-ai-base').value = base;
+  safeCheck('adv-ai-mode', cfg.ai_mode || false);
+  toggleAISettings();
+  onProviderChange();
+}
+
+function toggleAISettings() {
+  const on = document.getElementById('adv-ai-mode').checked;
+  document.getElementById('ai-settings').style.display = on ? '' : 'none';
+  document.getElementById('ai-mode-text').textContent = on ? '已开启' : '关闭';
+}
+
+function onProviderChange() {
+  const sel = document.getElementById('adv-ai-provider');
+  const baseField = document.getElementById('ai-base-field');
+  const baseInput = document.getElementById('adv-ai-base');
+  const modelInput = document.getElementById('adv-ai-model');
+  const defaults = {
+    'https://api.openai.com': 'gpt-4o-mini',
+    'https://api.deepseek.com': 'deepseek-chat',
+    'https://api.siliconflow.cn': 'deepseek-ai/DeepSeek-V3',
+  };
+  if (sel.value === 'custom') {
+    baseField.style.display = '';
+  } else {
+    baseField.style.display = 'none';
+    baseInput.value = sel.value;
+    if (defaults[sel.value]) modelInput.value = defaults[sel.value];
+  }
 }
 
 function safeSet(id, val) {
@@ -775,6 +890,7 @@ function showPage(name) {
   document.getElementById('page-' + name)?.classList.add('active');
   document.querySelector(`[data-page="${name}"]`)?.classList.add('active');
   if (name === 'logs') fetchLogs();
+  if (name === 'devices') loadDevices();
 }
 
 // ── 状态轮询 ──
@@ -888,6 +1004,12 @@ async function saveHA() {
 
 async function saveAdvanced() {
   cfg.poll_interval_seconds = parseInt(gv('adv-interval')) || 2;
+  cfg.ai_mode = document.getElementById('adv-ai-mode').checked;
+  cfg.openai = {
+    api_base: gv('adv-ai-base') || 'https://api.openai.com',
+    api_key: gv('adv-ai-key'),
+    model: gv('adv-ai-model') || 'gpt-4o-mini',
+  };
   await saveConfig('adv');
 }
 
@@ -1052,6 +1174,54 @@ async function pollQrLogin() {
       document.getElementById('qr-status').textContent = d.msg || '错误';
     }
   } catch(e) {}
+}
+
+// ── 设备管理 ──
+let deviceAliases = {};
+
+async function loadDevices() {
+  const a = document.getElementById('devices-alert');
+  try {
+    const [dr, ar] = await Promise.all([
+      fetch('/api/devices'), fetch('/api/aliases')
+    ]);
+    const dd = await dr.json();
+    const ad = await ar.json();
+    deviceAliases = ad.aliases || {};
+    if (!dd.ok) { showAlert(a, 'err', dd.msg); return; }
+    document.getElementById('device-count').textContent = dd.count + ' 个设备';
+    renderDeviceList2(dd.devices);
+  } catch(e) {
+    showAlert(a, 'err', '加载失败: ' + e.message);
+  }
+}
+
+function renderDeviceList2(devices) {
+  const list = document.getElementById('device-list');
+  const domainNames = {light:'灯光',switch:'开关',climate:'空调',scene:'场景',media_player:'媒体',script:'脚本',automation:'自动化',input_boolean:'虚拟开关',fan:'风扇',cover:'窗帘',lock:'门锁',vacuum:'扫地机'};
+  list.innerHTML = devices.map(d => {
+    const alias = deviceAliases[d.entity_id] || '';
+    return `<div class="rule-item">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--text-bright)">${escHtml(d.name)}</div>
+          <div style="font-size:10px;color:var(--text-dim);font-family:var(--mono);margin-top:2px">${escHtml(d.entity_id)} <span style="color:var(--orange)">[${domainNames[d.domain]||d.domain}]</span></div>
+        </div>
+        <input type="text" value="${escHtml(alias)}" placeholder="起个名字..."
+          style="width:160px;background:var(--bg0);border:1px solid var(--border);border-radius:var(--r);padding:4px 8px;color:var(--text);font-size:12px"
+          onchange="saveAlias('${escAttr(d.entity_id)}', this.value)">
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function saveAlias(eid, alias) {
+  await fetch('/api/aliases', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({entity_id: eid, alias: alias.trim()})
+  });
+  deviceAliases[eid] = alias.trim();
 }
 
 function renderDeviceList(devices) {
