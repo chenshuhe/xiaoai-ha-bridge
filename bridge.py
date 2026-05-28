@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.8.0"
+VERSION = "3.8.1"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -564,9 +564,8 @@ async def bridge_loop():
                 if hardware in GET_ASK_BY_MINA:
                     records = await _get_latest_ask_by_mina(na, device_id)
                 else:
-                    fetch_ts = last_timestamp.get(device_id, cur_ts)
                     records, _ = await _get_latest_ask_from_xiaoai(
-                        _bridge_session, device_id, hardware or "L06A", fetch_ts
+                        _bridge_session, device_id, hardware or "L06A", cur_ts
                     )
 
                 for rec in records or []:
