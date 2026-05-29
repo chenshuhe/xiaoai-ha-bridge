@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.8.1"
+VERSION = "3.9.0"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -261,6 +261,60 @@ class HAClient:
                 return r.status in (200, 201)
         except Exception as e:
             log.error("HA 调用异常: %s", e)
+            return False
+
+    async def create_automation(self, automation_id: str, config: dict,
+                                session: aiohttp.ClientSession) -> bool:
+        url = f"{self.base}/api/config/automation/config/{automation_id}"
+        try:
+            async with session.post(url, json=config, headers=self.headers,
+                                    timeout=aiohttp.ClientTimeout(total=10)) as r:
+                return r.status in (200, 201)
+        except Exception as e:
+            log.error("创建自动化异常: %s", e)
+            return False
+
+    async def reload_automations(self, session: aiohttp.ClientSession) -> bool:
+        url = f"{self.base}/api/services/automation/reload"
+        try:
+            async with session.post(url, json={}, headers=self.headers,
+                                    timeout=aiohttp.ClientTimeout(total=10)) as r:
+                return r.status in (200, 201)
+        except Exception as e:
+            log.error("重载自动化异常: %s", e)
+            return False
+
+    async def list_automation_states(self, session: aiohttp.ClientSession) -> list[dict]:
+        url = f"{self.base}/api/states"
+        try:
+            async with session.get(url, headers=self.headers,
+                                   timeout=aiohttp.ClientTimeout(total=10)) as r:
+                if r.status != 200:
+                    return []
+                states = await r.json()
+                return [
+                    {
+                        "entity_id": s["entity_id"],
+                        "state": s.get("state", ""),
+                        "alias": s.get("attributes", {}).get("friendly_name", ""),
+                        "last_triggered": s.get("attributes", {}).get("last_triggered"),
+                    }
+                    for s in states
+                    if s.get("entity_id", "").startswith("automation.xiaoai_bridge_")
+                ]
+        except Exception as e:
+            log.error("获取自动化列表异常: %s", e)
+            return []
+
+    async def delete_automation(self, automation_id: str,
+                                session: aiohttp.ClientSession) -> bool:
+        url = f"{self.base}/api/config/automation/config/{automation_id}"
+        try:
+            async with session.delete(url, headers=self.headers,
+                                      timeout=aiohttp.ClientTimeout(total=10)) as r:
+                return r.status == 200
+        except Exception as e:
+            log.error("删除自动化异常: %s", e)
             return False
 
 
@@ -602,8 +656,27 @@ async def bridge_loop():
                         service = action.pop("service")
                         reply = action.pop("reply", "好的")
                         delay = action.pop("delay_minutes", None)
+                        schedule_type = action.pop("type", None)
+                        schedule_time = action.pop("schedule_time", None)
+                        schedule_days = action.pop("schedule_days", None)
 
-                        if delay:
+                        if schedule_type == "schedule" and schedule_time:
+                            # 定时自动化：在 HA 中创建定时任务
+                            automation_id, ok = await _create_ha_automation(
+                                ha, domain, service, action,
+                                schedule_time, schedule_days, _bridge_session,
+                            )
+                            if ok:
+                                reply = f"好的，已创建定时任务：{schedule_time} {schedule_days or '每天'} {reply}"
+                                log.info("🕐 已创建自动化 %s", automation_id)
+                            else:
+                                reply = "抱歉，创建定时任务失败了"
+                            if mi_cfg.get("tts_reply", True):
+                                try:
+                                    await na.text_to_speech(device_id, reply)
+                                except Exception:
+                                    pass
+                        elif delay:
                             # 延迟执行：先回复，后定时执行
                             try:
                                 delay_sec = int(delay) * 60
@@ -680,6 +753,65 @@ async def _delayed_call(ha: HAClient, domain: str, service: str,
         log.info("⏰ 定时任务完成: %s/%s → %s", domain, service, "成功" if ok else "失败")
     except Exception as e:
         log.error("⏰ 定时任务异常: %s", e)
+
+
+_AUTOMATION_PREFIX = "xiaoai_bridge_"
+_WEEKDAY_MAP = {
+    "mon": "mon", "tue": "tue", "wed": "wed", "thu": "thu",
+    "fri": "fri", "sat": "sat", "sun": "sun",
+    "周一": "mon", "周二": "tue", "周三": "wed", "周四": "thu",
+    "周五": "fri", "周六": "sat", "周日": "sun",
+}
+
+
+async def _create_ha_automation(
+    ha: HAClient, domain: str, service: str, data: dict,
+    schedule_time: str, schedule_days: str | None,
+    session: aiohttp.ClientSession,
+) -> tuple[str, bool]:
+    """在 HA 中创建定时自动化"""
+    if not re.match(r"^\d{1,2}:\d{2}$", schedule_time):
+        return "", False
+    # 补齐 HH:MM:SS 格式
+    parts = schedule_time.split(":")
+    at_time = f"{int(parts[0]):02d}:{int(parts[1]):02d}:00"
+
+    automation_id = f"{_AUTOMATION_PREFIX}{int(time.time())}"
+    entity_id = data.get("entity_id", "")
+
+    # 构建 action
+    action_item = {"service": f"{domain}.{service}", "target": {"entity_id": entity_id}}
+    extra = {k: v for k, v in data.items() if k != "entity_id"}
+    if extra:
+        action_item["data"] = extra
+
+    config = {
+        "alias": f"小爱桥接-{at_time[:5]} {entity_id}",
+        "description": "由小爱语音桥接器自动创建",
+        "trigger": [{"platform": "time", "at": at_time}],
+        "action": [action_item],
+        "mode": "single",
+    }
+
+    # 星期条件
+    days = (schedule_days or "daily").lower().strip()
+    if days in ("weekdays", "工作日"):
+        config["condition"] = [{"condition": "time", "weekday": ["mon", "tue", "wed", "thu", "fri"]}]
+    elif days in ("weekends", "周末"):
+        config["condition"] = [{"condition": "time", "weekday": ["sat", "sun"]}]
+    elif days not in ("daily", "每天", ""):
+        weekdays = []
+        for d in re.split(r"[,，、\s]+", days):
+            d = d.strip()
+            if d in _WEEKDAY_MAP:
+                weekdays.append(_WEEKDAY_MAP[d])
+        if weekdays:
+            config["condition"] = [{"condition": "time", "weekday": weekdays}]
+
+    ok = await ha.create_automation(automation_id, config, session)
+    if ok:
+        ok = await ha.reload_automations(session)
+    return automation_id, ok
 
 
 def _extract_answer(rec: dict) -> str:
@@ -1231,6 +1363,13 @@ def _build_ai_prompt(query: str, devices: list[dict], aliases: dict) -> str:
         "4. 如果用户说百分比，对应 brightness_pct 或 volume_level\n"
         "5. 如果没有匹配的设备或指令不明确，返回 {\"action\":\"none\"}\n"
         "6. 只返回 JSON，不要任何其他文字。\n"
+        "7. 如果用户指令包含定时/计划/每天/每周/每小时/几点/半/分等时间相关词汇（如\"每天七点半打开热水器\"），"
+        "这是定时指令，返回格式增加 type、schedule_time、schedule_days 字段：\n"
+        "   {\"type\":\"schedule\",\"entity_id\":\"...\",\"domain\":\"...\",\"service\":\"...\","
+        "\"schedule_time\":\"07:30\",\"schedule_days\":\"daily\",\"reply\":\"回复文字\"}\n"
+        "   - schedule_time 格式为 HH:MM（24小时制）\n"
+        "   - schedule_days: \"daily\"=每天, \"weekdays\"=工作日, \"weekends\"=周末, 或具体星期如 \"mon,wed,fri\"\n"
+        "   - 普通即时指令不需要 type 字段\n"
         "返回格式：{\"entity_id\":\"...\",\"domain\":\"...\",\"service\":\"...\",<额外参数>, \"reply\":\"回复文字\"}"
     )
 
@@ -1559,6 +1698,9 @@ async def test_rule(req: TestRuleRequest):
     service = result.pop("service", "")
     reply = result.pop("reply", "好的")
     delay = result.pop("delay_minutes", None)
+    schedule_type = result.pop("type", None)
+    schedule_time = result.pop("schedule_time", None)
+    schedule_days = result.pop("schedule_days", None)
 
     cfg = load_config()
     ha_cfg = cfg.get("homeassistant", {})
@@ -1567,6 +1709,23 @@ async def test_rule(req: TestRuleRequest):
 
     if not ha_url or not ha_token:
         return {"matched": True, "executed": False, "msg": "HA 未配置", "action": result, "ai_used": ai_used}
+
+    if schedule_type == "schedule" and schedule_time:
+        if not ha_token:
+            return {"matched": True, "executed": False, "msg": "HA 未配置", "action": result, "ai_used": ai_used}
+        ha = HAClient(ha_url, ha_token)
+        async with aiohttp.ClientSession() as s:
+            automation_id, created = await _create_ha_automation(
+                ha, domain, service, result, schedule_time, schedule_days, s,
+            )
+        return {
+            "matched": True,
+            "executed": created,
+            "msg": f"{'🤖 AI' if ai_used else '📋 规则'} → 创建定时自动化 {schedule_time} {'成功' if created else '失败'}",
+            "action": {**result, "domain": domain, "service": service, "reply": reply,
+                       "type": "schedule", "schedule_time": schedule_time, "schedule_days": schedule_days},
+            "ai_used": ai_used,
+        }
 
     if delay:
         return {"matched": True, "executed": False, "msg": f"定时任务需通过桥接器执行（{delay}分钟延迟）", "action": result, "ai_used": ai_used}
@@ -1596,6 +1755,36 @@ async def test_rule(req: TestRuleRequest):
             "action": {**result, "domain": domain, "service": service, "reply": reply},
             "ai_used": ai_used,
         }
+
+
+@app.get("/api/automations")
+async def list_automations():
+    cfg = load_config()
+    ha_cfg = cfg.get("homeassistant", {})
+    if not ha_cfg.get("url") or not ha_cfg.get("token"):
+        return {"ok": False, "automations": [], "msg": "HA 未配置"}
+    ha = HAClient(ha_cfg["url"], ha_cfg["token"])
+    async with aiohttp.ClientSession() as s:
+        automations = await ha.list_automation_states(s)
+    return {"ok": True, "automations": automations, "count": len(automations)}
+
+
+@app.delete("/api/automations/{automation_id}")
+async def delete_automation(automation_id: str):
+    cfg = load_config()
+    ha_cfg = cfg.get("homeassistant", {})
+    if not ha_cfg.get("url") or not ha_cfg.get("token"):
+        raise HTTPException(400, "HA 未配置")
+    if not automation_id.startswith(_AUTOMATION_PREFIX):
+        raise HTTPException(403, "只能删除桥接器创建的自动化")
+    ha = HAClient(ha_cfg["url"], ha_cfg["token"])
+    async with aiohttp.ClientSession() as s:
+        ok = await ha.delete_automation(automation_id, s)
+        if ok:
+            await ha.reload_automations(s)
+    if not ok:
+        raise HTTPException(500, "删除失败")
+    return {"ok": True}
 
 
 # ──────────────── 启动 ────────────────

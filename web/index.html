@@ -467,6 +467,9 @@ textarea { resize: vertical; min-height: 80px; }
       <div class="nav-item" onclick="showPage('devices')" data-page="devices">
         <span class="nav-icon">📋</span> 设备管理
       </div>
+      <div class="nav-item" onclick="showPage('schedules')" data-page="schedules">
+        <span class="nav-icon">🕐</span> 定时任务
+      </div>
       <div class="nav-item" onclick="showPage('advanced')" data-page="advanced">
         <span class="nav-icon">⚙</span> 高级设置
       </div>
@@ -728,6 +731,20 @@ textarea { resize: vertical; min-height: 80px; }
       <div class="rule-list" id="device-list"></div>
     </div>
 
+    <!-- 定时任务 -->
+    <div class="page" id="page-schedules">
+      <div class="page-header">
+        <div class="page-title">// SCHEDULED AUTOMATIONS</div>
+        <div class="page-desc">小爱语音创建的定时自动化任务</div>
+      </div>
+      <div id="schedules-alert" class="alert"></div>
+      <div class="ctrl-bar">
+        <button class="btn btn-primary" onclick="loadSchedules()">🔄 刷新</button>
+        <span style="color:var(--text-dim);font-size:12px;margin-left:12px" id="schedule-count"></span>
+      </div>
+      <div class="rule-list" id="schedule-list"></div>
+    </div>
+
     <!-- 高级 -->
     <div class="page" id="page-advanced">
       <div class="page-header">
@@ -891,6 +908,7 @@ function showPage(name) {
   document.querySelector(`[data-page="${name}"]`)?.classList.add('active');
   if (name === 'logs') fetchLogs();
   if (name === 'devices') loadDevices();
+  if (name === 'schedules') loadSchedules();
 }
 
 // ── 状态轮询 ──
@@ -1222,6 +1240,55 @@ async function saveAlias(eid, alias) {
     body: JSON.stringify({entity_id: eid, alias: alias.trim()})
   });
   deviceAliases[eid] = alias.trim();
+}
+
+// ── 定时任务 ──
+async function loadSchedules() {
+  const a = document.getElementById('schedules-alert');
+  try {
+    const r = await fetch('/api/automations');
+    const d = await r.json();
+    if (!d.ok) { showAlert(a, 'err', d.msg); return; }
+    document.getElementById('schedule-count').textContent = d.count + ' 个定时任务';
+    const list = document.getElementById('schedule-list');
+    if (!d.automations.length) {
+      list.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:24px">暂无定时任务，对小爱说"每天七点半打开热水器"即可创建</div>';
+      return;
+    }
+    list.innerHTML = d.automations.map(s => {
+      const name = escHtml(s.alias || s.entity_id);
+      const eid = escHtml(s.entity_id);
+      const id = s.entity_id.replace('automation.', '');
+      const state = s.state === 'on';
+      const last = s.last_triggered ? new Date(s.last_triggered).toLocaleString('zh-CN') : '从未触发';
+      return `<div class="rule-item">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;color:var(--text-bright)">${name}</div>
+            <div style="font-size:10px;color:var(--text-dim);font-family:var(--mono);margin-top:2px">${eid}</div>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:2px">上次触发: ${last}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:${state?'var(--green-dim)':'var(--red-dim)'};color:${state?'var(--green)':'var(--red)'}">${state?'启用':'禁用'}</span>
+            <button class="rule-del" onclick="deleteSchedule('${escAttr(id)}')">✕ 删除</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    showAlert(a, 'err', '加载失败: ' + e.message);
+  }
+}
+
+async function deleteSchedule(id) {
+  if (!confirm('确定删除此定时任务？')) return;
+  const a = document.getElementById('schedules-alert');
+  try {
+    const r = await fetch('/api/automations/' + encodeURIComponent(id), {method:'DELETE'});
+    const d = await r.json();
+    if (d.ok) { showAlert(a, 'ok', '已删除'); loadSchedules(); }
+    else showAlert(a, 'err', d.detail || '删除失败');
+  } catch(e) { showAlert(a, 'err', '删除失败: ' + e.message); }
 }
 
 function renderDeviceList(devices) {
