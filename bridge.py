@@ -411,8 +411,10 @@ def _get_cookie(cfg: dict) -> dict | None:
 
 
 async def _get_latest_ask_from_xiaoai(session: aiohttp.ClientSession, device_id: str,
-                                      hardware: str, last_ts: int) -> tuple[list[dict], int]:
-    """HTTP API 方式获取最新对话（参考 xiaomusic get_latest_ask_from_xiaoai）"""
+                                      hardware: str, last_ts: int) -> tuple[list[dict], int, bool]:
+    """HTTP API 方式获取最新对话（参考 xiaomusic get_latest_ask_from_xiaoai）
+    返回 (records, last_ts, need_relogin)
+    """
     cookies = {"deviceId": device_id}
     for i in range(3):
         try:
@@ -423,21 +425,21 @@ async def _get_latest_ask_from_xiaoai(session: aiohttp.ClientSession, device_id:
             r = await session.get(url, timeout=timeout, cookies=cookies)
             log.debug("HTTP轮询: %s → status=%s", url[:120], r.status)
             if r.status != 200:
-                log.warning("HTTP 轮询返回 %s (第%d次)", r.status, i + 1)
-                if i == 2 and r.status == 401:
-                    return [], last_ts  # 401 需要重登录，但这里先返回空
+                log.debug("HTTP 轮询返回 %s (第%d次)", r.status, i + 1)
+                if r.status == 401:
+                    return [], last_ts, True  # 需要重新登录
                 continue
             data = await r.json()
             d = data.get("data")
             if not d:
-                return [], last_ts
+                return [], last_ts, False
             records = json.loads(d).get("records", [])
             if records:
-                return records, last_ts
+                return records, last_ts, False
         except Exception as e:
             log.warning("HTTP 轮询异常 (第%d次): %s", i + 1, e)
             continue
-    return [], last_ts
+    return [], last_ts, False
 
 
 async def bridge_loop():
@@ -618,9 +620,37 @@ async def bridge_loop():
                 if hardware in GET_ASK_BY_MINA:
                     records = await _get_latest_ask_by_mina(na, device_id)
                 else:
-                    records, _ = await _get_latest_ask_from_xiaoai(
+                    records, _, need_relogin = await _get_latest_ask_from_xiaoai(
                         _bridge_session, device_id, hardware or "L06A", cur_ts
                     )
+                    if need_relogin:
+                        log.info("Token 已过期，尝试重新登录...")
+                        try:
+                            _set_token(account, cfg)
+                            ok = await account.login("micoapi")
+                            if ok:
+                                _save_auth_and_token(account)
+                                na = MiNAService(account)
+                                # 刷新 cookie
+                                cookies_dict = _get_cookie(cfg)
+                                if cookies_dict:
+                                    import yarl
+                                    from http.cookies import SimpleCookie
+                                    sc = SimpleCookie()
+                                    for k, v in cookies_dict.items():
+                                        try:
+                                            sc[k] = v
+                                        except Exception:
+                                            pass
+                                    for domain in ['account.xiaomi.com', '.mina.mi.com']:
+                                        _bridge_session.cookie_jar.update_cookies(sc, yarl.URL(f'https://{domain}/'))
+                                log.info("重新登录成功")
+                            else:
+                                log.warning("重新登录失败")
+                        except Exception as e:
+                            log.warning("重新登录异常: %s", e)
+                        await asyncio.sleep(poll_interval)
+                        continue
 
                 for rec in records or []:
                     # 时间戳去重
