@@ -929,10 +929,15 @@ class SaveConfigRequest(BaseModel):
 @app.post("/api/config")
 async def post_config(req: SaveConfigRequest):
     cfg = req.config
-    # 如果密码是脱敏值则保留原密码
     existing = load_config()
-    if cfg.get("xiaomi", {}).get("password") == "••••••••":
+    # 脱敏字段保留原值
+    masked = "••••••••"
+    if cfg.get("xiaomi", {}).get("password") == masked:
         cfg["xiaomi"]["password"] = existing.get("xiaomi", {}).get("password", "")
+    if cfg.get("homeassistant", {}).get("token") == masked:
+        cfg["homeassistant"]["token"] = existing.get("homeassistant", {}).get("token", "")
+    if cfg.get("openai", {}).get("api_key") == masked:
+        cfg["openai"]["api_key"] = existing.get("openai", {}).get("api_key", "")
     save_config(cfg)
     log.info("配置已保存")
     return {"ok": True}
