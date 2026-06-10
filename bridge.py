@@ -469,8 +469,15 @@ async def bridge_loop():
     ha = HAClient(ha_cfg["url"], ha_cfg["token"])
     poll_interval = cfg.get("poll_interval_seconds", 2)
 
-    # 基于时间戳的去重，key=device_id
+    # 基于时间戳的去重，key=device_id — 持久化到文件，避免重启重复执行
+    LAST_TS_PATH = CONFIG_PATH.parent / "last_timestamp.json"
     last_timestamp: dict[str, int] = {}
+    if LAST_TS_PATH.exists():
+        try:
+            last_timestamp = json.loads(LAST_TS_PATH.read_text())
+        except Exception:
+            last_timestamp = {}
+    log.info("上次记录时间戳: %s", last_timestamp)
 
     _bridge_session = aiohttp.ClientSession()
     try:
@@ -626,6 +633,9 @@ async def bridge_loop():
                     if need_relogin:
                         log.info("Token 已过期，尝试重新登录...")
                         try:
+                            # 清除 session 的旧 cookie，避免小米返回精简响应导致 missing nonce
+                            _bridge_session.cookie_jar.clear_domain("account.xiaomi.com")
+                            _bridge_session.cookie_jar.clear_domain("mina.mi.com")
                             _set_token(account, cfg)
                             ok = await account.login("micoapi")
                             if ok:
@@ -663,6 +673,7 @@ async def bridge_loop():
                         log.debug("跳过旧记录 ts=%s <= last=%s", ts, last_timestamp.get(device_id, 0))
                         continue
                     last_timestamp[device_id] = ts
+                    LAST_TS_PATH.write_text(json.dumps(last_timestamp, ensure_ascii=False))
 
                     # 提取用户问题和助手回复
                     query = _extract_query(rec)
@@ -870,6 +881,8 @@ def _extract_query(rec: dict) -> str:
 # ──────────────── FastAPI 应用 ────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 容器启动后自动开始轮询
+    await start_bridge()
     log.info("Web 配置面板已启动 → http://0.0.0.0:%d", WEB_PORT)
     yield
     global _bridge_task
