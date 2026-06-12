@@ -1,0 +1,28 @@
+# ============================================
+# xiaoai-ha-bridge 配置模板
+# 使用方式：复制此文件为 config.yaml 后修改
+# cp config.yaml.example config.yaml
+# ============================================
+
+xiaomi:
+  username: 'your_xiaomi_phone'
+  password: 'your_xiaomi_password'
+  hardware: L06A
+  device_did: ''
+  tts_reply: true
+  cookie_text: ''
+
+homeassistant:
+  url: http://your-ha-ip:8123
+  token: 'your_ha_long_lived_token'
+
+poll_interval_seconds: 2
+intent_rules: []
+ai_mode: true
+
+openai:
+  api_base: https://api.deepseek.com
+  api_key: 'your_api_key'
+  model: deepseek-v4-flash
+
+device_aliases: {}

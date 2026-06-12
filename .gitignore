@@ -1,6 +1,7 @@
-# 持久化敏感数据
+# 持久化敏感数据（!! 永远不要提交 !!）
 config/auth.json
 config/.mi.token
+config/config.yaml
 
 # Python
 __pycache__/

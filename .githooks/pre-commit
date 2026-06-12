@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# ============================================
+# pre-commit hook: 防止敏感信息被提交
+# 安装方式：在项目根目录运行
+#   cp .githooks/pre-commit .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+# ============================================
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+FAIL=0
+
+echo -e "${YELLOW}🔍 安全检查：扫描敏感文件...${NC}"
+
+# 检查1: 禁止提交 config.yaml
+if git diff --cached --name-only | grep -q 'config/config.yaml'; then
+  echo -e "${RED}❌ 错误：config/config.yaml 包含敏感信息（密码/token/密钥），禁止提交！${NC}"
+  echo "   请改用 config/config.yaml.example 作为模板"
+  FAIL=1
+fi
+
+# 检查2: 禁止提交 .env
+if git diff --cached --name-only | grep -q '\.env$'; then
+  echo -e "${RED}❌ 错误：.env 文件包含敏感信息，禁止提交！${NC}"
+  FAIL=1
+fi
+
+# 检查3: 检查提交内容避免常见的秘密文件被误提交
+if git diff --cached --name-only | grep -qiE '(secret|private|credential)'; then
+  echo -e "${RED}❌ 错误：看起来你在提交机密文件！${NC}"
+  FAIL=1
+fi
+
+if [ "$FAIL" -eq 1 ]; then
+  echo -e "${RED}❌ 提交已阻止，请移除敏感文件后再试${NC}"
+  exit 1
+else
+  echo -e "${GREEN}✅ 安全检查通过${NC}"
+fi
