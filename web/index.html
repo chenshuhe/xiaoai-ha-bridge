@@ -5,516 +5,665 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>小爱 × HA 桥接器</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Reset & Base ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 :root {
-  --bg0: #0d0f12;
-  --bg1: #13161b;
-  --bg2: #1a1e25;
-  --bg3: #22272f;
-  --border: #2a303a;
-  --border-hi: #3d4550;
-  --orange: #f07830;
-  --orange-dim: #7a3c18;
-  --orange-glow: rgba(240,120,48,0.15);
-  --green: #4ec97e;
-  --green-dim: #1e4a30;
-  --red: #e05550;
-  --red-dim: #4a1e1e;
-  --blue: #5b9cf6;
-  --text: #c8d0dc;
-  --text-dim: #6a7585;
-  --text-bright: #e8edf5;
-  --mono: 'JetBrains Mono', monospace;
-  --sans: 'Noto Sans SC', sans-serif;
-  --r: 6px;
+  --bg-deepest: #08090a;
+  --bg-panel: #0f1011;
+  --bg-surface: #191a1b;
+  --bg-elevated: #222326;
+  --bg-hover: rgba(255,255,255,0.04);
+  --bg-active: rgba(113,112,255,0.1);
+  --text-primary: #f7f8f8;
+  --text-secondary: #d0d6e0;
+  --text-tertiary: #8a8f98;
+  --text-quaternary: #62666d;
+  --accent: #7170ff;
+  --accent-bg: #5e6ad2;
+  --accent-hover: #828fff;
+  --accent-subtle: rgba(113,112,255,0.12);
+  --border-subtle: rgba(255,255,255,0.05);
+  --border-default: rgba(255,255,255,0.08);
+  --border-active: rgba(113,112,255,0.3);
+  --green: #10b981;
+  --green-bg: rgba(16,185,129,0.12);
+  --red: #ef4444;
+  --red-bg: rgba(239,68,68,0.12);
+  --orange: #f59e0b;
+  --orange-bg: rgba(245,158,11,0.12);
+  --blue: #60a5fa;
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 12px;
 }
 
 body {
-  background: var(--bg0);
-  color: var(--text);
+  background: var(--bg-deepest);
+  color: var(--text-secondary);
   font-family: var(--sans);
   font-size: 14px;
+  font-feature-settings: 'cv01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
   min-height: 100vh;
-  overflow-x: hidden;
 }
 
-/* ── 扫描线装饰 ── */
-body::before {
-  content: '';
-  position: fixed; inset: 0;
-  background: repeating-linear-gradient(
-    0deg, transparent, transparent 2px,
-    rgba(255,255,255,0.012) 2px, rgba(255,255,255,0.012) 4px
-  );
-  pointer-events: none; z-index: 1000;
-}
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-default);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text-quaternary)}
 
-/* ── 顶栏 ── */
+/* ── Header ── */
 header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 28px;
-  height: 56px;
-  background: var(--bg1);
-  border-bottom: 1px solid var(--border);
+  padding: 0 24px; height: 52px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-subtle);
   position: sticky; top: 0; z-index: 100;
 }
 .logo {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 10px;
 }
-.logo-mark {
-  width: 32px; height: 32px;
-  background: var(--orange);
-  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+.logo-icon {
+  width: 28px; height: 28px;
+  background: linear-gradient(135deg, var(--accent-bg), var(--accent));
+  border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 11px; font-weight: 600;
-  color: #000; letter-spacing: -1px;
-  animation: pulse-mark 3s ease-in-out infinite;
-}
-@keyframes pulse-mark {
-  0%,100% { opacity:1 } 50% { opacity:.75 }
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  color: #fff; letter-spacing: -0.5px;
 }
 .logo-text {
-  font-family: var(--mono); font-size: 13px; font-weight: 600;
-  color: var(--text-bright); letter-spacing: 1px;
+  font-family: var(--sans); font-size: 13px; font-weight: 500;
+  color: var(--text-primary); letter-spacing: -0.1px;
 }
-.logo-sub { font-size: 10px; color: var(--text-dim); margin-top: 1px; font-weight: 400; }
-
+.header-right {
+  display: flex; align-items: center; gap: 12px;
+}
 .port-badge {
-  font-family: var(--mono); font-size: 11px;
-  color: var(--orange); background: var(--orange-glow);
-  border: 1px solid var(--orange-dim);
-  padding: 3px 10px; border-radius: 3px;
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  color: var(--text-tertiary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  padding: 3px 10px; border-radius: 4px;
 }
 .ver-badge {
-  font-family: var(--mono); font-size: 10px;
-  color: var(--green); background: var(--green-dim);
-  border: 1px solid var(--green);
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  color: var(--text-quaternary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
   padding: 2px 8px; border-radius: 3px;
-  opacity: 0.7;
 }
 
-/* ── 布局 ── */
+/* ── Layout ── */
 .layout {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  min-height: calc(100vh - 56px);
+  display: flex;
+  min-height: calc(100vh - 52px);
 }
 
-/* ── 侧边导航 ── */
+/* ── Sidebar ── */
 nav {
-  background: var(--bg1);
-  border-right: 1px solid var(--border);
-  padding: 20px 0;
-  position: sticky; top: 56px;
-  height: calc(100vh - 56px);
+  width: 220px; flex-shrink: 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-subtle);
+  padding: 16px 8px;
+  display: flex; flex-direction: column;
+  height: calc(100vh - 52px);
+  position: sticky; top: 52px;
   overflow-y: auto;
 }
-.nav-section { padding: 0 12px 8px; }
+.nav-section { margin-bottom: 4px; }
 .nav-label {
-  font-family: var(--mono); font-size: 9px; font-weight: 600;
-  color: var(--text-dim); letter-spacing: 2px; text-transform: uppercase;
-  padding: 0 10px 6px; display: block;
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  color: var(--text-quaternary); letter-spacing: 0.8px; text-transform: uppercase;
+  padding: 8px 10px 6px; display: block;
 }
 .nav-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 10px; border-radius: var(--r); cursor: pointer;
-  color: var(--text-dim); font-size: 13px;
-  transition: all .15s; border: 1px solid transparent;
-  margin-bottom: 2px;
-  user-select: none;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: var(--r-md); cursor: pointer;
+  color: var(--text-tertiary); font-size: 13px; font-weight: 400;
+  transition: all .12s; border: 1px solid transparent;
+  margin-bottom: 1px; user-select: none;
+  line-height: 1.3;
 }
-.nav-item:hover { color: var(--text); background: var(--bg2); }
+.nav-item:hover { color: var(--text-secondary); background: var(--bg-hover); }
 .nav-item.active {
-  color: var(--orange); background: var(--orange-glow);
-  border-color: var(--orange-dim);
+  color: var(--accent); background: var(--accent-subtle);
+  border-color: var(--border-active);
 }
-.nav-icon { font-size: 15px; width: 18px; text-align: center; }
+.nav-icon { font-size: 14px; width: 18px; text-align: center; opacity: 0.8; }
+.nav-item.active .nav-icon { opacity: 1; }
 
-/* ── 状态指示器 ── */
+/* ── Status Widget ── */
 .status-widget {
-  margin: 16px 12px 0;
-  background: var(--bg2); border: 1px solid var(--border);
-  border-radius: var(--r); padding: 12px;
+  margin-top: auto;
+  padding: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
 }
 .status-row {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 8px;
+  padding: 4px 0;
 }
-.status-row:last-child { margin-bottom: 0; }
-.status-key { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+.status-key {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  color: var(--text-quaternary); text-transform: uppercase; letter-spacing: 0.5px;
+}
+.status-val {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  color: var(--text-secondary);
+  display: flex; align-items: center; gap: 5px;
+}
 .dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--border-hi);
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-quaternary);
   transition: all .3s;
 }
-.dot.on-green { background: var(--green); box-shadow: 0 0 6px var(--green); animation: blink 2s infinite; }
-.dot.on-orange { background: var(--orange); box-shadow: 0 0 6px var(--orange); animation: blink 1.5s infinite; }
-.dot.on-red { background: var(--red); }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+.dot.on-green { background: var(--green); box-shadow: 0 0 5px rgba(16,185,129,0.5); }
+.dot.on-red { background: var(--red); box-shadow: 0 0 5px rgba(239,68,68,0.4); }
+.dot.on-orange { background: var(--orange); box-shadow: 0 0 5px rgba(245,158,11,0.4); }
 
-.stat-val {
-  font-family: var(--mono); font-size: 11px; color: var(--text-bright);
+/* ── Main ── */
+main {
+  flex: 1; padding: 28px 32px;
+  overflow-y: auto; max-width: 1200px;
 }
-
-/* ── 主内容 ── */
-main { padding: 28px; overflow-y: auto; }
-
 .page { display: none; }
 .page.active { display: block; }
 
-/* ── 页头 ── */
-.page-header { margin-bottom: 24px; }
+/* ── Page Header ── */
+.page-header { margin-bottom: 28px; }
 .page-title {
-  font-family: var(--mono); font-size: 18px; font-weight: 600;
-  color: var(--text-bright); letter-spacing: .5px;
+  font-size: 20px; font-weight: 590;
+  color: var(--text-primary); letter-spacing: -0.24px;
+  display: flex; align-items: center; gap: 10px;
 }
-.page-desc { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.page-title .page-icon {
+  width: 28px; height: 28px;
+  background: var(--accent-subtle);
+  border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px;
+}
+.page-desc {
+  font-size: 13px; color: var(--text-tertiary); font-weight: 400;
+  margin-top: 4px; margin-left: 38px;
+}
 
-/* ── 控制按钮组 ── */
+/* ── Control Bar ── */
 .ctrl-bar {
-  display: flex; gap: 10px; margin-bottom: 24px; align-items: center;
+  display: flex; gap: 8px; margin-bottom: 24px; align-items: center;
   flex-wrap: wrap;
 }
+
+/* ── Buttons ── */
 .btn {
-  font-family: var(--mono); font-size: 12px; font-weight: 600;
-  padding: 9px 20px; border-radius: var(--r); border: 1px solid;
-  cursor: pointer; transition: all .15s; letter-spacing: .5px;
-  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--sans); font-size: 13px; font-weight: 500;
+  padding: 7px 16px; border-radius: var(--r-md);
+  border: 1px solid var(--border-default);
+  cursor: pointer; transition: all .12s;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.03);
+  color: var(--text-secondary);
+  letter-spacing: -0.05px;
 }
-.btn-start {
-  background: var(--green-dim); border-color: var(--green);
-  color: var(--green);
+.btn:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: var(--text-quaternary);
+  color: var(--text-primary);
 }
-.btn-start:hover { background: var(--green); color: #000; }
-.btn-stop {
-  background: var(--red-dim); border-color: var(--red);
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn:active { transform: scale(0.98); }
+
+.btn-primary {
+  background: var(--accent-bg); border-color: var(--accent);
+  color: #fff; font-weight: 500;
+}
+.btn-primary:hover {
+  background: var(--accent-hover); border-color: var(--accent-hover);
+  color: #fff;
+}
+
+.btn-danger {
+  background: var(--red-bg); border-color: rgba(239,68,68,0.3);
   color: var(--red);
 }
-.btn-stop:hover { background: var(--red); color: #fff; }
-.btn-primary {
-  background: var(--orange-glow); border-color: var(--orange);
-  color: var(--orange);
+.btn-danger:hover {
+  background: var(--red); border-color: var(--red);
+  color: #fff;
 }
-.btn-primary:hover { background: var(--orange); color: #000; }
-.btn-ghost {
-  background: transparent; border-color: var(--border-hi);
-  color: var(--text-dim);
-}
-.btn-ghost:hover { border-color: var(--text-dim); color: var(--text); }
-.btn:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ── 卡片 ── */
+.btn-success {
+  background: var(--green-bg); border-color: rgba(16,185,129,0.3);
+  color: var(--green);
+}
+.btn-success:hover {
+  background: var(--green); border-color: var(--green);
+  color: #fff;
+}
+
+/* ── Cards ── */
 .card {
-  background: var(--bg1); border: 1px solid var(--border);
-  border-radius: var(--r); padding: 20px; margin-bottom: 16px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  padding: 20px; margin-bottom: 16px;
+  backdrop-filter: blur(2px);
+}
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 .card-title {
-  font-family: var(--mono); font-size: 11px; font-weight: 600;
-  color: var(--orange); letter-spacing: 1.5px; text-transform: uppercase;
-  margin-bottom: 16px; padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 590;
+  color: var(--text-quaternary);
+  letter-spacing: 1px; text-transform: uppercase;
+  display: flex; align-items: center; gap: 6px;
 }
+.card-title .card-icon { font-size: 13px; }
 
-/* ── 表单控件 ── */
+/* ── Form Grid ── */
 .form-grid {
   display: grid; gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 .form-field { display: flex; flex-direction: column; gap: 5px; }
 .form-field.full { grid-column: 1 / -1; }
 label {
-  font-family: var(--mono); font-size: 10px; font-weight: 600;
-  color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase;
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  color: var(--text-quaternary);
+  letter-spacing: 0.5px; text-transform: uppercase;
 }
 input, select, textarea {
-  background: var(--bg0); border: 1px solid var(--border);
-  border-radius: var(--r); color: var(--text-bright);
-  font-family: var(--mono); font-size: 13px;
-  padding: 9px 12px;
-  outline: none; transition: border-color .15s;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  color: var(--text-primary);
+  font-family: var(--sans); font-size: 13px; font-weight: 400;
+  padding: 8px 12px;
+  outline: none; transition: border-color .15s, box-shadow .15s;
   width: 100%;
 }
 input:focus, select:focus, textarea:focus {
-  border-color: var(--orange);
-  box-shadow: 0 0 0 2px var(--orange-glow);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
 }
-textarea { resize: vertical; min-height: 80px; }
+input::placeholder, textarea::placeholder { color: var(--text-quaternary); }
+textarea { resize: vertical; min-height: 72px; font-family: var(--mono); font-size: 12px; }
+select { cursor: pointer; }
+select option { background: var(--bg-surface); color: var(--text-primary); }
+
 .input-row {
   display: flex; gap: 8px; align-items: flex-end;
 }
 .input-row input { flex: 1; }
 
-/* ── 切换开关 ── */
-.toggle-wrap {
-  display: flex; align-items: center; gap: 10px;
-}
+/* ── Toggle ── */
+.toggle-wrap { display: flex; align-items: center; gap: 10px; }
 .toggle {
-  position: relative; width: 40px; height: 22px;
-  cursor: pointer;
+  position: relative; width: 38px; height: 20px;
+  cursor: pointer; flex-shrink: 0;
 }
 .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
 .toggle-track {
-  position: absolute; inset: 0; border-radius: 11px;
-  background: var(--bg3); border: 1px solid var(--border-hi);
+  position: absolute; inset: 0; border-radius: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
   transition: all .25s;
 }
 .toggle input:checked + .toggle-track {
-  background: var(--orange-dim); border-color: var(--orange);
+  background: rgba(113,112,255,0.2);
+  border-color: var(--accent);
 }
 .toggle-thumb {
-  position: absolute; top: 3px; left: 3px;
+  position: absolute; top: 2px; left: 2px;
   width: 14px; height: 14px; border-radius: 50%;
-  background: var(--text-dim); transition: all .25s;
+  background: var(--text-quaternary); transition: all .25s;
 }
 .toggle input:checked ~ .toggle-thumb {
-  left: 21px; background: var(--orange);
+  left: 20px; background: var(--accent);
 }
-.toggle-label { font-size: 13px; color: var(--text); }
+.toggle-label { font-size: 13px; color: var(--text-secondary); font-weight: 400; }
 
-/* ── 告警条 ── */
-.alert {
-  padding: 10px 14px; border-radius: var(--r);
-  font-family: var(--mono); font-size: 12px;
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 14px; display: none;
-}
-.alert.show { display: flex; }
-.alert-ok { background: var(--green-dim); border: 1px solid var(--green); color: var(--green); }
-.alert-err { background: var(--red-dim); border: 1px solid var(--red); color: var(--red); }
-.alert-warn { background: var(--orange-glow); border: 1px solid var(--orange-dim); color: var(--orange); }
-
-/* ── 日志面板 ── */
-.log-panel {
-  background: var(--bg0); border: 1px solid var(--border);
-  border-radius: var(--r); padding: 14px;
-  font-family: var(--mono); font-size: 12px; line-height: 1.7;
-  height: 420px; overflow-y: auto;
-}
-.log-line { display: flex; gap: 10px; }
-.log-time { color: var(--text-dim); flex-shrink: 0; }
-.log-lvl-INFO { color: var(--blue); }
-.log-lvl-WARNING { color: var(--orange); }
-.log-lvl-ERROR { color: var(--red); }
-.log-msg { color: var(--text); }
-
-/* ── 规则编辑器 ── */
-.rule-list { display: flex; flex-direction: column; gap: 10px; }
-.rule-item {
-  background: var(--bg2); border: 1px solid var(--border);
-  border-radius: var(--r); padding: 14px;
-  transition: border-color .15s;
-}
-.rule-item:hover { border-color: var(--border-hi); }
-.rule-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
-}
-.rule-num {
-  font-family: var(--mono); font-size: 10px; color: var(--text-dim);
-  background: var(--bg3); padding: 2px 7px; border-radius: 3px;
-}
-.rule-del {
-  font-family: var(--mono); font-size: 11px;
-  color: var(--red); cursor: pointer; opacity: .6;
-  background: none; border: none;
-  padding: 3px 8px; border-radius: 3px;
-  transition: opacity .15s, background .15s;
-}
-.rule-del:hover { opacity: 1; background: var(--red-dim); }
-
-.rule-grid {
-  display: grid; gap: 8px;
-  grid-template-columns: 1fr 1fr;
-}
-.rule-grid .full { grid-column: 1/-1; }
-
-/* ── 域选择按钮 ── */
-.domain-select {
-  display: flex; flex-wrap: wrap; gap: 6px;
-}
-.domain-btn {
-  display: flex; align-items: center; gap: 5px;
-  padding: 6px 12px;
-  background: var(--bg0); border: 1px solid var(--border);
-  border-radius: var(--r); color: var(--text-dim);
-  font-size: 12px; cursor: pointer;
-  transition: all .15s;
-}
-.domain-btn:hover { border-color: var(--border-hi); color: var(--text); }
-.domain-btn.active { border-color: var(--orange); color: var(--orange); background: var(--orange-glow); }
-.domain-icon { font-size: 14px; line-height: 1; }
-.extra-fields { display: contents; }
-
-/* ── 开关 toggle ── */
-.switch-label { display: flex; align-items: center; cursor: pointer; }
+/* ── Switch ── */
+.switch-label { display: flex; align-items: center; cursor: pointer; gap: 8px; }
 .switch-label input[type=checkbox] { display: none; }
 .switch-slider {
-  width: 40px; height: 22px;
-  background: var(--bg0); border: 1px solid var(--border);
-  border-radius: 11px; position: relative; transition: .2s;
+  width: 38px; height: 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 10px; position: relative; transition: .2s; flex-shrink: 0;
 }
 .switch-slider::after {
   content: ''; position: absolute; top: 2px; left: 2px;
-  width: 16px; height: 16px; border-radius: 50%;
-  background: var(--text-dim); transition: .2s;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--text-quaternary); transition: .2s;
 }
 .switch-label input:checked + .switch-slider {
-  border-color: var(--green); background: var(--green-dim);
+  border-color: var(--green);
+  background: var(--green-bg);
 }
 .switch-label input:checked + .switch-slider::after {
   left: 20px; background: var(--green);
 }
 
-/* ── 测试区 ── */
-.test-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
-.test-input-row input { flex: 1; }
-.test-result {
-  background: var(--bg0); border: 1px solid var(--border);
-  border-radius: var(--r); padding: 12px;
-  font-family: var(--mono); font-size: 12px;
-  min-height: 60px; color: var(--text-dim);
-  white-space: pre-wrap;
+/* ── Alert ── */
+.alert {
+  padding: 10px 14px; border-radius: var(--r-md);
+  font-size: 12px; font-family: var(--mono);
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px; display: none;
 }
+.alert.show { display: flex; }
+.alert-ok { background: var(--green-bg); border: 1px solid rgba(16,185,129,0.25); color: var(--green); }
+.alert-err { background: var(--red-bg); border: 1px solid rgba(239,68,68,0.25); color: var(--red); }
+.alert-warn { background: var(--orange-bg); border: 1px solid rgba(245,158,11,0.25); color: var(--orange); }
 
-/* ── 仪表盘卡片 ── */
+/* ── Log Panel ── */
+.log-panel {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  font-family: var(--mono); font-size: 12px; line-height: 1.7;
+  height: 420px; overflow-y: auto;
+}
+.log-line { display: flex; gap: 10px; padding: 1px 0; }
+.log-time { color: var(--text-quaternary); flex-shrink: 0; }
+.log-lvl-INFO { color: var(--blue); }
+.log-lvl-WARNING { color: var(--orange); }
+.log-lvl-ERROR { color: var(--red); }
+.log-msg { color: var(--text-secondary); }
+
+/* ── Rule List ── */
+.rule-list { display: flex; flex-direction: column; gap: 10px; }
+.rule-item {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  padding: 16px;
+  transition: border-color .15s;
+}
+.rule-item:hover { border-color: var(--border-active); }
+.rule-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.rule-num {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  color: var(--text-quaternary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 8px; border-radius: 3px;
+}
+.rule-del {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  color: var(--red); cursor: pointer; opacity: .6;
+  background: none; border: none;
+  padding: 4px 10px; border-radius: var(--r-sm);
+  transition: all .15s;
+}
+.rule-del:hover { opacity: 1; background: var(--red-bg); }
+
+.rule-grid {
+  display: grid; gap: 10px;
+  grid-template-columns: 1fr 1fr;
+}
+.rule-grid .full { grid-column: 1/-1; }
+
+/* ── Domain Buttons ── */
+.domain-select {
+  display: flex; flex-wrap: wrap; gap: 4px;
+}
+.domain-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 10px;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md); color: var(--text-tertiary);
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  transition: all .12s;
+}
+.domain-btn:hover { border-color: var(--text-quaternary); color: var(--text-secondary); }
+.domain-btn.active {
+  border-color: var(--accent); color: var(--accent);
+  background: var(--accent-subtle);
+}
+.domain-icon { font-size: 13px; line-height: 1; }
+.extra-fields { display: contents; }
+
+/* ── Dash Grid ── */
 .dash-grid {
   display: grid; gap: 14px;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-bottom: 20px;
 }
 .dash-card {
-  background: var(--bg1); border: 1px solid var(--border);
-  border-radius: var(--r); padding: 18px 20px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+  transition: border-color .15s;
 }
 .dash-val {
   font-family: var(--mono); font-size: 28px; font-weight: 600;
-  color: var(--text-bright); line-height: 1;
+  color: var(--text-primary); line-height: 1.1;
 }
 .dash-key {
-  font-family: var(--mono); font-size: 10px; color: var(--text-dim);
-  letter-spacing: 1px; text-transform: uppercase; margin-top: 6px;
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  color: var(--text-quaternary);
+  letter-spacing: 0.8px; text-transform: uppercase;
+  margin-top: 6px;
 }
-.dash-card.highlight { border-color: var(--orange-dim); background: var(--orange-glow); }
-.dash-card.highlight .dash-val { color: var(--orange); }
+.dash-card.highlight {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+.dash-card.highlight .dash-val { color: var(--accent); }
+.dash-card.card-green { border-color: rgba(16,185,129,0.3); }
+.dash-card.card-green .dash-val { color: var(--green); }
 
-/* ── 最后指令 ── */
+/* ── Quick Start ── */
+.quick-step {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 0;
+  font-size: 13px; color: var(--text-tertiary); line-height: 1.6;
+}
+.quick-step-num {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent-subtle);
+  border: 1px solid var(--border-active);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  color: var(--accent); flex-shrink: 0;
+  margin-top: 1px;
+}
+.quick-step b { color: var(--text-secondary); }
+
+/* ── Last Command ── */
 .last-cmd {
-  background: var(--bg2); border: 1px solid var(--border);
-  border-radius: var(--r); padding: 14px 18px;
-  font-family: var(--mono); font-size: 13px;
-  color: var(--text-dim); margin-bottom: 16px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-lg); padding: 12px 16px;
+  font-family: var(--mono); font-size: 12px;
+  color: var(--text-tertiary); margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: space-between;
 }
-.last-cmd span { color: var(--text-bright); }
+.last-cmd-text { color: var(--text-primary); }
+.last-cmd-time { color: var(--text-quaternary); font-size: 11px; }
 
-/* ── 滚动条 ── */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+/* ── Test Area ── */
+.test-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.test-input-row input { flex: 1; }
+.test-result {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md); padding: 12px;
+  font-family: var(--mono); font-size: 12px;
+  min-height: 56px; color: var(--text-tertiary);
+  white-space: pre-wrap;
+}
 
-/* ── 加载动画 ── */
+/* ── Device Item ── */
+.device-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.device-info { flex: 1; min-width: 0; }
+.device-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.device-meta {
+  font-size: 10px; font-family: var(--mono); font-weight: 500;
+  color: var(--text-quaternary);
+  margin-top: 2px;
+}
+.device-meta .domain-tag { color: var(--accent); }
+
+/* ── Schedule State ── */
+.schedule-state {
+  font-size: 11px; font-weight: 500;
+  padding: 2px 10px; border-radius: 999px;
+  letter-spacing: 0.2px;
+}
+.schedule-state.on { background: var(--green-bg); color: var(--green); border: 1px solid rgba(16,185,129,0.25); }
+.schedule-state.off { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
+
+/* ── Spinner ── */
 .spinner {
   display: inline-block; width: 12px; height: 12px;
-  border: 2px solid var(--border); border-top-color: var(--orange);
+  border: 2px solid var(--border-default);
+  border-top-color: var(--accent);
   border-radius: 50%; animation: spin .6s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.saving-indicator { display: none; align-items: center; gap: 6px; font-size: 12px; color: var(--orange); }
+.saving-indicator {
+  display: none; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--accent); font-weight: 500;
+}
 .saving-indicator.show { display: flex; }
+
+/* ── Empty State ── */
+.empty-state {
+  text-align: center; padding: 40px 20px;
+  color: var(--text-quaternary); font-size: 13px;
+}
+
+/* ── Alias Input ── */
+.alias-input {
+  width: 150px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--r-md);
+  padding: 4px 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--sans);
+  outline: none;
+  transition: border-color .15s;
+}
+.alias-input:focus { border-color: var(--accent); }
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  nav { display: none; }
+  main { padding: 20px 16px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .rule-grid { grid-template-columns: 1fr; }
+  .dash-grid { grid-template-columns: 1fr 1fr; }
+  header { padding: 0 16px; }
+}
 </style>
 </head>
 <body>
 
 <header>
   <div class="logo">
-    <div class="logo-mark">XA</div>
-    <div>
-      <div class="logo-text">XIAOAI × HA BRIDGE</div>
-      <div class="logo-sub">小爱同学 → Home Assistant</div>
-    </div>
+    <div class="logo-icon">AI</div>
+    <div class="logo-text">XiaoAI × HA Bridge</div>
   </div>
-  <div class="port-badge">:47521</div>
-  <div class="ver-badge" id="ver-badge">v-</div>
+  <div class="header-right">
+    <div class="port-badge">:47521</div>
+    <div class="ver-badge" id="ver-badge">v-</div>
+  </div>
 </header>
 
 <div class="layout">
-  <!-- 侧边栏 -->
+  <!-- Sidebar -->
   <nav>
     <div class="nav-section">
-      <span class="nav-label">监控</span>
+      <span class="nav-label">Monitor</span>
       <div class="nav-item active" onclick="showPage('dashboard')" data-page="dashboard">
-        <span class="nav-icon">◈</span> 仪表盘
+        <span class="nav-icon">&#9670;</span> 仪表盘
       </div>
       <div class="nav-item" onclick="showPage('logs')" data-page="logs">
-        <span class="nav-icon">≡</span> 实时日志
+        <span class="nav-icon">&#9776;</span> 实时日志
       </div>
     </div>
     <div class="nav-section" style="margin-top:8px">
-      <span class="nav-label">配置</span>
+      <span class="nav-label">Configuration</span>
       <div class="nav-item" onclick="showPage('xiaomi')" data-page="xiaomi">
-        <span class="nav-icon">◎</span> 小米账号
+        <span class="nav-icon">&#9673;</span> 小米账号
       </div>
       <div class="nav-item" onclick="showPage('ha')" data-page="ha">
-        <span class="nav-icon">⬡</span> Home Assistant
+        <span class="nav-icon">&#10545;</span> Home Assistant
       </div>
       <div class="nav-item" onclick="showPage('rules')" data-page="rules">
-        <span class="nav-icon">⊞</span> 意图规则
+        <span class="nav-icon">&#8878;</span> 意图规则
       </div>
       <div class="nav-item" onclick="showPage('devices')" data-page="devices">
-        <span class="nav-icon">📋</span> 设备管理
+        <span class="nav-icon">&#9670;</span> 设备管理
       </div>
       <div class="nav-item" onclick="showPage('schedules')" data-page="schedules">
-        <span class="nav-icon">🕐</span> 定时任务
+        <span class="nav-icon">&#9687;</span> 定时任务
       </div>
       <div class="nav-item" onclick="showPage('advanced')" data-page="advanced">
-        <span class="nav-icon">⚙</span> 高级设置
+        <span class="nav-icon">&#9881;</span> 高级设置
       </div>
     </div>
 
-    <!-- 状态指示器 -->
     <div class="status-widget">
       <div class="status-row">
-        <span class="status-key">桥接器</span>
-        <div style="display:flex;align-items:center;gap:6px">
+        <span class="status-key">Bridge</span>
+        <span class="status-val">
           <div class="dot" id="dot-bridge"></div>
-          <span class="stat-val" id="txt-bridge">离线</span>
-        </div>
+          <span id="txt-bridge">离线</span>
+        </span>
       </div>
       <div class="status-row">
-        <span class="status-key">HA 连接</span>
-        <div style="display:flex;align-items:center;gap:6px">
+        <span class="status-key">HA</span>
+        <span class="status-val">
           <div class="dot" id="dot-ha"></div>
-          <span class="stat-val" id="txt-ha">—</span>
-        </div>
+          <span id="txt-ha">&mdash;</span>
+        </span>
       </div>
       <div class="status-row">
-        <span class="status-key">指令数</span>
-        <span class="stat-val" id="txt-count">0</span>
+        <span class="status-key">Commands</span>
+        <span class="status-val"><span id="txt-count">0</span></span>
       </div>
     </div>
   </nav>
 
-  <!-- 主内容 -->
+  <!-- Main Content -->
   <main>
 
-    <!-- 仪表盘 -->
+    <!-- Dashboard -->
     <div class="page active" id="page-dashboard">
       <div class="page-header">
-        <div class="page-title">// DASHBOARD</div>
+        <div class="page-title"><span class="page-icon">&#9670;</span> 仪表盘</div>
         <div class="page-desc">桥接器运行状态监控</div>
       </div>
 
       <div class="ctrl-bar">
-        <button class="btn btn-start" id="btn-start" onclick="startBridge()">
-          ▶ 启动桥接器
-        </button>
-        <button class="btn btn-stop" id="btn-stop" onclick="stopBridge()" disabled>
-          ■ 停止
-        </button>
+        <button class="btn btn-success" id="btn-start" onclick="startBridge()">&#9654; 启动桥接器</button>
+        <button class="btn btn-danger" id="btn-stop" onclick="stopBridge()" disabled>&#9632; 停止</button>
         <div class="saving-indicator" id="ctrl-saving">
           <div class="spinner"></div> 处理中...
         </div>
@@ -523,12 +672,12 @@ textarea { resize: vertical; min-height: 80px; }
       <div id="dash-alert" class="alert"></div>
 
       <div class="dash-grid">
-        <div class="dash-card" id="dc-status">
+        <div class="dash-card card-green" id="dc-status">
           <div class="dash-val" id="dc-status-val">OFF</div>
           <div class="dash-key">运行状态</div>
         </div>
         <div class="dash-card">
-          <div class="dash-val" id="dc-uptime">—</div>
+          <div class="dash-val" id="dc-uptime">&mdash;</div>
           <div class="dash-key">运行时长</div>
         </div>
         <div class="dash-card highlight">
@@ -536,49 +685,64 @@ textarea { resize: vertical; min-height: 80px; }
           <div class="dash-key">指令执行数</div>
         </div>
         <div class="dash-card">
-          <div class="dash-val" id="dc-ha">—</div>
+          <div class="dash-val" id="dc-ha">&mdash;</div>
           <div class="dash-key">HA 连接</div>
         </div>
       </div>
 
       <div class="last-cmd" id="last-cmd-box">
-        最近指令：<span id="last-cmd-text">暂无</span>
-        <span id="last-cmd-time" style="float:right;color:var(--text-dim)"></span>
+        <span>最近指令：<span class="last-cmd-text" id="last-cmd-text">暂无</span></span>
+        <span class="last-cmd-time" id="last-cmd-time"></span>
       </div>
 
       <div class="card">
-        <div class="card-title">⬡ 快速说明</div>
-        <div style="font-size:13px;line-height:2;color:var(--text-dim)">
-          <div>① 在 <b style="color:var(--text)">小米账号</b> 页填入账号密码和音箱型号</div>
-          <div>② 在 <b style="color:var(--text)">Home Assistant</b> 页填入 HA 地址和长期令牌，点击「测试连接」</div>
-          <div>③ 在 <b style="color:var(--text)">意图规则</b> 页配置语音 → 设备映射，用「测试规则」验证正则</div>
-          <div>④ 点击 <b style="color:var(--green)">启动桥接器</b>，对小爱说话即可控制 HA 设备</div>
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#10545;</span> 快速开始</div>
+        </div>
+        <div class="quick-step">
+          <div class="quick-step-num">1</div>
+          <div>在 <b>小米账号</b> 页填入账号密码，点击测试连接，会自动发现音箱设备</div>
+        </div>
+        <div class="quick-step">
+          <div class="quick-step-num">2</div>
+          <div>在 <b>Home Assistant</b> 页填入 HA 地址和长期令牌，点击测试连接</div>
+        </div>
+        <div class="quick-step">
+          <div class="quick-step-num">3</div>
+          <div>在 <b>意图规则</b> 页配置语音 &rarr; 设备映射，也可以用「测试规则」验证正则</div>
+        </div>
+        <div class="quick-step">
+          <div class="quick-step-num">4</div>
+          <div>点击 <b style="color:var(--green)">启动桥接器</b>，对小爱说话即可控制 HA 设备</div>
         </div>
       </div>
     </div>
 
-    <!-- 日志 -->
+    <!-- Logs -->
     <div class="page" id="page-logs">
       <div class="page-header">
-        <div class="page-title">// LIVE LOGS</div>
-        <div class="page-desc">实时运行日志（最近 80 条）</div>
+        <div class="page-title"><span class="page-icon">&#9776;</span> 实时日志</div>
+        <div class="page-desc">运行日志（最近 80 条）</div>
       </div>
       <div class="ctrl-bar">
-        <button class="btn btn-ghost" onclick="clearLogs()">✕ 清空显示</button>
-        <button class="btn btn-ghost" onclick="toggleAutoScroll()" id="btn-autoscroll">⬇ 自动滚动: ON</button>
+        <button class="btn" onclick="clearLogs()">&#10005; 清空</button>
+        <button class="btn" onclick="toggleAutoScroll()" id="btn-autoscroll">&#11015; 自动滚动</button>
       </div>
       <div class="log-panel" id="log-panel"></div>
     </div>
 
-    <!-- 小米账号 -->
+    <!-- Xiaomi -->
     <div class="page" id="page-xiaomi">
       <div class="page-header">
-        <div class="page-title">// XIAOMI ACCOUNT</div>
+        <div class="page-title"><span class="page-icon">&#9673;</span> 小米账号</div>
         <div class="page-desc">小米账号与小爱音箱设置</div>
       </div>
       <div id="xiaomi-alert" class="alert"></div>
+
       <div class="card">
-        <div class="card-title">◎ 账号信息</div>
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#9673;</span> 账号信息</div>
+        </div>
         <div class="form-grid">
           <div class="form-field">
             <label>账号（手机号 / 邮箱）</label>
@@ -587,61 +751,73 @@ textarea { resize: vertical; min-height: 80px; }
           <div class="form-field">
             <label>密码</label>
             <div class="input-row">
-              <input type="password" id="mi-password" placeholder="••••••••">
-              <button class="btn btn-ghost" onclick="testXiaomi()">⚡ 测试连接</button>
-              <button class="btn btn-ghost" onclick="qrLogin()" style="color:var(--green)">📱 扫码登录</button>
-            </div>
-            <!-- QR 扫码登录区域 -->
-            <div id="qr-area" style="display:none;margin-top:12px;text-align:center">
-              <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px" id="qr-msg">请用米家 App 扫描二维码</div>
-              <img id="qr-img" src="" style="width:200px;height:200px;border:2px solid var(--border);border-radius:8px" alt="QR Code">
-              <div style="margin-top:8px;font-size:11px;color:var(--text-dim)" id="qr-status"></div>
+              <input type="password" id="mi-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;">
+              <button class="btn" onclick="testXiaomi()">&#9889; 测试</button>
+              <button class="btn btn-primary" onclick="qrLogin()">&#128241; 扫码登录</button>
             </div>
           </div>
         </div>
       </div>
-      <!-- Cookie 直接登录（推荐，无需短信验证，参考 xiaomusic） -->
-      <div id="mi-verify-card" class="card">
-        <div class="card-title">◎ Cookie 登录（推荐！无需短信验证）</div>
-        <div style="font-size:12px;color:var(--text-dim);line-height:1.8;margin-bottom:10px">
-          如果您的浏览器已登录小米账号，直接复制 Cookie 即可跳过短信。<br>
-          ① 打开 <a href="https://account.xiaomi.com" target="_blank" style="color:var(--orange)">account.xiaomi.com</a>（确认已登录状态）<br>
-          ② 按 <b style="color:var(--text)">F12</b> → <b style="color:var(--text)">Application</b> → <b style="color:var(--text)">Cookies</b> → account.xiaomi.com<br>
-          ③ 复制所有 Cookie（含 <code>userId</code>、<code>passToken</code>、<code>serviceToken</code>）<br>
-          ④ 粘贴到下方 → 点击「测试连接」
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#9673;</span> Cookie 登录 <span style="color:var(--green);text-transform:none;font-size:10px">免短信验证</span></div>
+        </div>
+        <div style="font-size:12px;color:var(--text-tertiary);line-height:1.8;margin-bottom:12px">
+          如果浏览器已登录小米账号，直接复制 Cookie 即可跳过短信验证。<br>
+          ① 打开 <a href="https://account.xiaomi.com" target="_blank" style="color:var(--accent)">account.xiaomi.com</a>（确认已登录）<br>
+          ② 按 <b style="color:var(--text-secondary)">F12</b> &rarr; <b style="color:var(--text-secondary)">Application</b> &rarr; <b style="color:var(--text-secondary)">Cookies</b> &rarr; account.xiaomi.com<br>
+          ③ 复制所有 Cookie（含 <code style="color:var(--text-primary)">userId</code>、<code style="color:var(--text-primary)">passToken</code>、<code style="color:var(--text-primary)">serviceToken</code>）<br>
+          ④ 粘贴到下方 &rarr; 点击「测试」
         </div>
         <div class="form-field">
-          <label>浏览器 Cookie（有则自动用 Cookie 登录，留空则走密码登录）</label>
-          <textarea id="mi-cookie-text" rows="3" placeholder="userId=xxx; passToken=xxx; serviceToken=xxx; ..." style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text);font-size:12px;resize:vertical"></textarea>
+          <label>浏览器 Cookie</label>
+          <textarea id="mi-cookie-text" rows="3" placeholder="userId=xxx; passToken=xxx; serviceToken=xxx; ..."></textarea>
         </div>
       </div>
-      <!-- 短信验证回调（密码登录触发短信后显示） -->
+
       <div id="mi-sts-card" class="card" style="display:none">
-        <div class="card-title">📱 短信验证 — 第2步：重新获取 Cookie</div>
-        <div style="font-size:12px;color:var(--text-dim);line-height:1.8;margin-bottom:10px">
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#128241;</span> 短信验证</div>
+        </div>
+        <div style="font-size:12px;color:var(--text-tertiary);line-height:1.8;margin-bottom:10px">
           ① 点击上方链接完成短信验证<br>
           ② 验证成功后浏览器会跳转到新页面<br>
-          ③ 在该页面按 <b style="color:var(--text)">F12</b> → <b style="color:var(--text)">Application</b> → <b style="color:var(--text)">Cookies</b><br>
-          ④ 分别点击 <b style="color:var(--text)">account.xiaomi.com</b> 和 <b style="color:var(--text)">api2.mina.mi.com</b>，复制所有 Cookie<br>
-          ⑤ 粘贴到上方「Cookie 登录」输入框 → 点「测试连接」
+          ③ 在该页面复制所有 Cookie 粘贴到上方「Cookie 登录」输入框 &rarr; 点「测试」
         </div>
-        <div style="font-size:11px;color:var(--orange);margin-top:4px">提示：短信验证后 serviceToken 已刷新，此时复制 Cookie 即可永久免短信</div>
+        <div style="font-size:11px;color:var(--orange)">提示：短信验证后 serviceToken 已刷新，此时复制 Cookie 即可永久免短信</div>
       </div>
-      <!-- 设备列表（测试成功后动态显示） -->
+
       <div id="mi-device-list" class="card" style="display:none">
-        <div class="card-title">◎ 已发现设备 <span id="mi-device-count" style="color:var(--text-dim);font-weight:400;font-size:10px"></span></div>
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#9670;</span> 已发现设备 <span id="mi-device-count" style="color:var(--text-quaternary);font-weight:400;text-transform:none;font-size:10px"></span></div>
+        </div>
         <div id="mi-devices"></div>
       </div>
+
+      <div class="card" id="qr-area" style="display:none">
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#128241;</span> 扫码登录</div>
+        </div>
+        <div style="text-align:center;padding:12px">
+          <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:10px" id="qr-msg">请用米家 App 扫描二维码</div>
+          <img id="qr-img" src="" style="width:180px;height:180px;border:2px solid var(--border-default);border-radius:var(--r-lg);background:#fff" alt="QR Code">
+          <div style="margin-top:8px;font-size:11px;color:var(--text-quaternary)" id="qr-status"></div>
+        </div>
+      </div>
+
       <div class="card">
-        <div class="card-title">◎ 设备配置</div>
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#9881;</span> 设备配置</div>
+        </div>
         <div class="form-grid">
           <div class="form-field">
             <label>音箱型号 (hardware)</label>
-            <input type="text" id="mi-hardware" placeholder="点击测试连接自动填充">
+            <input type="text" id="mi-hardware" placeholder="测试连接自动填充">
           </div>
           <div class="form-field">
             <label>设备 DID（留空自动）</label>
-            <input type="text" id="mi-did" placeholder="点击设备可自动填入">
+            <input type="text" id="mi-did" placeholder="点击设备自动填入">
           </div>
           <div class="form-field full">
             <div class="toggle-wrap">
@@ -650,23 +826,26 @@ textarea { resize: vertical; min-height: 80px; }
                 <div class="toggle-track"></div>
                 <div class="toggle-thumb"></div>
               </label>
-              <span class="toggle-label">操作成功后让小爱语音播报结果（TTS 回复）</span>
+              <span class="toggle-label">操作后小爱语音播报结果（TTS 回复）</span>
             </div>
           </div>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="saveXiaomi()">↓ 保存小米配置</button>
+      <button class="btn btn-primary" onclick="saveXiaomi()">&darr; 保存小米配置</button>
     </div>
 
-    <!-- HA -->
+    <!-- Home Assistant -->
     <div class="page" id="page-ha">
       <div class="page-header">
-        <div class="page-title">// HOME ASSISTANT</div>
+        <div class="page-title"><span class="page-icon">&#10545;</span> Home Assistant</div>
         <div class="page-desc">连接 HA 实例并获取访问权限</div>
       </div>
       <div id="ha-alert" class="alert"></div>
+
       <div class="card">
-        <div class="card-title">⬡ 连接设置</div>
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#10545;</span> 连接设置</div>
+        </div>
         <div class="form-grid">
           <div class="form-field full">
             <label>HA 地址（含端口）</label>
@@ -676,99 +855,104 @@ textarea { resize: vertical; min-height: 80px; }
             <label>长期访问令牌 (Long-Lived Access Token)</label>
             <div class="input-row">
               <input type="password" id="ha-token" placeholder="eyJ...">
-              <button class="btn btn-ghost" onclick="testHA()">⚡ 测试连接</button>
+              <button class="btn" onclick="testHA()">&#9889; 测试连接</button>
             </div>
           </div>
         </div>
-        <div style="margin-top:14px;padding:12px;background:var(--bg2);border-radius:var(--r);font-size:12px;color:var(--text-dim);line-height:1.8">
-          <b style="color:var(--text)">如何获取令牌：</b>
-          打开 Home Assistant → 点击左下角头像 → 个人资料 →
-          滚动到底部「长期访问令牌」→ 创建令牌 → 复制粘贴到此处
+        <div style="margin-top:14px;padding:12px;background:rgba(0,0,0,0.2);border-radius:var(--r-md);font-size:12px;color:var(--text-tertiary);line-height:1.8">
+          <b style="color:var(--text-secondary)">如何获取令牌：</b>
+          打开 Home Assistant &rarr; 点击左下角头像 &rarr; 个人资料 &rarr;
+          滚动到底部「长期访问令牌」&rarr; 创建令牌 &rarr; 复制粘贴到此处
         </div>
       </div>
-      <button class="btn btn-primary" onclick="saveHA()">↓ 保存 HA 配置</button>
+      <button class="btn btn-primary" onclick="saveHA()">&darr; 保存 HA 配置</button>
     </div>
 
-    <!-- 规则 -->
+    <!-- Rules -->
     <div class="page" id="page-rules">
       <div class="page-header">
-        <div class="page-title">// INTENT RULES</div>
+        <div class="page-title"><span class="page-icon">&#8878;</span> 意图规则</div>
         <div class="page-desc">将语音文本映射到 Home Assistant 服务调用</div>
       </div>
       <div id="rules-alert" class="alert"></div>
 
-      <!-- 测试区 -->
       <div class="card">
-        <div class="card-title">⚡ 规则测试</div>
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#9889;</span> 规则测试</div>
+        </div>
         <div class="test-input-row">
           <input type="text" id="test-input" placeholder="输入语音文本，如「打开客厅灯」" onkeydown="if(event.key==='Enter')testRule()">
-          <button class="btn btn-ghost" onclick="testRule()">测试</button>
+          <button class="btn btn-primary" onclick="testRule()">测试</button>
         </div>
         <div class="test-result" id="test-result">点击「测试」查看匹配结果...</div>
       </div>
 
       <div class="ctrl-bar">
         <button class="btn btn-primary" onclick="addRule()">+ 新增规则</button>
-        <button class="btn btn-primary" onclick="saveRules()">↓ 保存</button>
-        <button class="btn btn-ghost" onclick="exportRules()">📤 导出</button>
-        <button class="btn btn-ghost" onclick="importRules()">📥 导入</button>
+        <button class="btn btn-primary" onclick="saveRules()">&darr; 保存</button>
+        <button class="btn" onclick="exportRules()">&#128228; 导出</button>
+        <button class="btn" onclick="importRules()">&#128229; 导入</button>
       </div>
-
       <div class="rule-list" id="rule-list"></div>
     </div>
 
-    <!-- 设备管理 -->
+    <!-- Devices -->
     <div class="page" id="page-devices">
       <div class="page-header">
-        <div class="page-title">// DEVICE MANAGEMENT</div>
-        <div class="page-desc">查看 HA 设备并设置别名（AI 托管模式下可通过别名控制）</div>
+        <div class="page-title"><span class="page-icon">&#9670;</span> 设备管理</div>
+        <div class="page-desc">查看 HA 设备并设置别名</div>
       </div>
       <div id="devices-alert" class="alert"></div>
       <div class="ctrl-bar">
-        <button class="btn btn-primary" onclick="loadDevices()">🔄 刷新设备列表</button>
-        <span style="color:var(--text-dim);font-size:12px;margin-left:12px" id="device-count"></span>
+        <button class="btn btn-primary" onclick="loadDevices()">&#128260; 刷新设备列表</button>
+        <span style="color:var(--text-tertiary);font-size:12px;margin-left:12px" id="device-count"></span>
       </div>
       <div class="rule-list" id="device-list"></div>
     </div>
 
-    <!-- 定时任务 -->
+    <!-- Schedules -->
     <div class="page" id="page-schedules">
       <div class="page-header">
-        <div class="page-title">// SCHEDULED AUTOMATIONS</div>
+        <div class="page-title"><span class="page-icon">&#9687;</span> 定时任务</div>
         <div class="page-desc">小爱语音创建的定时自动化任务</div>
       </div>
       <div id="schedules-alert" class="alert"></div>
       <div class="ctrl-bar">
-        <button class="btn btn-primary" onclick="loadSchedules()">🔄 刷新</button>
-        <span style="color:var(--text-dim);font-size:12px;margin-left:12px" id="schedule-count"></span>
+        <button class="btn btn-primary" onclick="loadSchedules()">&#128260; 刷新</button>
+        <span style="color:var(--text-tertiary);font-size:12px;margin-left:12px" id="schedule-count"></span>
       </div>
       <div class="rule-list" id="schedule-list"></div>
     </div>
 
-    <!-- 高级 -->
+    <!-- Advanced -->
     <div class="page" id="page-advanced">
       <div class="page-header">
-        <div class="page-title">// ADVANCED</div>
-        <div class="page-desc">轮询间隔与调试选项</div>
+        <div class="page-title"><span class="page-icon">&#9881;</span> 高级设置</div>
+        <div class="page-desc">轮询间隔、AI 托管与调试选项</div>
       </div>
       <div id="adv-alert" class="alert"></div>
+
       <div class="card">
-        <div class="card-title">⚙ 轮询设置</div>
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#9881;</span> 轮询设置</div>
+        </div>
         <div class="form-grid">
           <div class="form-field">
             <label>轮询间隔（秒）</label>
             <input type="number" id="adv-interval" min="1" max="60" value="2" step="1">
           </div>
         </div>
-        <div style="margin-top:10px;font-size:12px;color:var(--text-dim)">
-          建议 2–5 秒。间隔太短可能触发小米限速，太长会有延迟感。
+        <div style="margin-top:10px;font-size:12px;color:var(--text-tertiary)">
+          建议 2&ndash;5 秒。间隔太短可能触发小米限速，太长会有延迟感。
         </div>
       </div>
-      <!-- AI 托管 -->
+
       <div class="card" style="margin-top:16px">
-        <div class="card-title">🤖 AI 托管模式</div>
-        <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
-          开启后，正则未匹配的语音指令将交给 OpenAI 自动解析。设备列表自动从 HA 获取。
+        <div class="card-header">
+          <div class="card-title"><span class="card-icon">&#129302;</span> AI 托管模式</div>
+        </div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:12px">
+          开启后，正则未匹配的语音指令将交给 AI 自动解析。设备列表自动从 HA 获取。
         </div>
         <div class="form-grid">
           <div class="form-field">
@@ -776,7 +960,7 @@ textarea { resize: vertical; min-height: 80px; }
             <label class="switch-label">
               <input type="checkbox" id="adv-ai-mode" onchange="toggleAISettings()">
               <span class="switch-slider"></span>
-              <span id="ai-mode-text" style="margin-left:8px;font-size:12px">关闭</span>
+              <span id="ai-mode-text" style="font-size:12px;font-weight:400">关闭</span>
             </label>
           </div>
           <div id="ai-settings" style="display:none;grid-column:1/-1">
@@ -804,20 +988,22 @@ textarea { resize: vertical; min-height: 80px; }
           </div>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="saveAdvanced()">↓ 保存</button>
+      <button class="btn btn-primary" onclick="saveAdvanced()">&darr; 保存</button>
     </div>
 
   </main>
 </div>
 
 <script>
-// ── 状态 ──
+// ── State ──
 let cfg = {};
 let autoScroll = true;
 let logTimer = null;
 let statusTimer = null;
+let qrPollTimer = null;
+let deviceAliases = {};
 
-// ── 初始化 ──
+// ── Init ──
 async function init() {
   await loadConfig();
   renderRules();
@@ -850,14 +1036,13 @@ function applyConfigToUI() {
   safeSet('ha-url', ha.url || '');
   safeSet('ha-token', ha.token || '');
   safeSet('adv-interval', cfg.poll_interval_seconds || 2);
-  // OpenAI
   const oai = cfg.openai || {};
   safeSet('adv-ai-key', oai.api_key || '');
   safeSet('adv-ai-model', oai.model || 'gpt-4o-mini');
   const base = oai.api_base || 'https://api.openai.com';
   safeSet('adv-ai-base', base);
   const sel = document.getElementById('adv-ai-provider');
-  const known = { 'https://api.openai.com': 0, 'https://api.deepseek.com': 1, 'https://api.siliconflow.cn': 2 };
+  const known = {'https://api.openai.com':0,'https://api.deepseek.com':1,'https://api.siliconflow.cn':2};
   sel.selectedIndex = known[base] !== undefined ? known[base] : 3;
   if (sel.selectedIndex >= 3) document.getElementById('adv-ai-base').value = base;
   safeCheck('adv-ai-mode', cfg.ai_mode || false);
@@ -877,9 +1062,9 @@ function onProviderChange() {
   const baseInput = document.getElementById('adv-ai-base');
   const modelInput = document.getElementById('adv-ai-model');
   const defaults = {
-    'https://api.openai.com': 'gpt-4o-mini',
-    'https://api.deepseek.com': 'deepseek-chat',
-    'https://api.siliconflow.cn': 'deepseek-ai/DeepSeek-V3',
+    'https://api.openai.com':'gpt-4o-mini',
+    'https://api.deepseek.com':'deepseek-chat',
+    'https://api.siliconflow.cn':'deepseek-ai/DeepSeek-V3',
   };
   if (sel.value === 'custom') {
     baseField.style.display = '';
@@ -900,18 +1085,18 @@ function safeCheck(id, val) {
 }
 function gv(id) { return document.getElementById(id)?.value?.trim() || ''; }
 
-// ── 导航 ──
+// ── Navigation ──
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + name)?.classList.add('active');
-  document.querySelector(`[data-page="${name}"]`)?.classList.add('active');
+  document.querySelector('[data-page="'+name+'"]')?.classList.add('active');
   if (name === 'logs') fetchLogs();
   if (name === 'devices') loadDevices();
   if (name === 'schedules') loadSchedules();
 }
 
-// ── 状态轮询 ──
+// ── Status Polling ──
 function startPolling() {
   fetchStatus();
   statusTimer = setInterval(fetchStatus, 2000);
@@ -931,41 +1116,28 @@ async function fetchStatus() {
 function updateStatusUI(s) {
   const running = s.running;
   const haOk = s.connected;
-
-  // 侧栏指示灯
   setDot('dot-bridge', running ? 'on-green' : '');
   document.getElementById('txt-bridge').textContent = running ? '运行中' : '离线';
   setDot('dot-ha', haOk ? 'on-green' : (running ? 'on-red' : ''));
-  document.getElementById('txt-ha').textContent = haOk ? '已连接' : '—';
+  document.getElementById('txt-ha').textContent = haOk ? '已连接' : '\u2014';
   document.getElementById('txt-count').textContent = s.command_count || 0;
-
-  // 仪表盘
   document.getElementById('dc-count').textContent = s.command_count || 0;
-  document.getElementById('dc-ha').textContent = haOk ? '✓ OK' : '✗ —';
-  const statusCard = document.getElementById('dc-status');
+  document.getElementById('dc-ha').textContent = haOk ? '\u2713 OK' : '\u2717 \u2014';
+  const sc = document.getElementById('dc-status');
   document.getElementById('dc-status-val').textContent = running ? 'ON' : 'OFF';
-  statusCard.style.borderColor = running ? 'var(--green)' : 'var(--border)';
-  statusCard.style.background = running ? 'var(--green-dim)' : '';
-
-  // 运行时长
-  document.getElementById('dc-uptime').textContent =
-    s.uptime != null ? fmtUptime(s.uptime) : '—';
-
-  // 最后指令
+  sc.style.borderColor = running ? 'var(--green)' : 'var(--border-default)';
+  sc.style.background = running ? 'var(--green-bg)' : '';
+  document.getElementById('dc-uptime').textContent = s.uptime != null ? fmtUptime(s.uptime) : '\u2014';
   if (s.last_command) {
-    document.getElementById('last-cmd-text').textContent = '「' + s.last_command + '」';
+    document.getElementById('last-cmd-text').textContent = '\u300C' + s.last_command + '\u300D';
     document.getElementById('last-cmd-time').textContent = s.last_command_time || '';
   }
-
-  // 错误告警
   const a = document.getElementById('dash-alert');
   if (s.error) {
-    showAlert(a, 'err', '✗ ' + s.error);
+    showAlert(a, 'err', '\u2717 ' + s.error);
   } else {
     a.classList.remove('show');
   }
-
-  // 按钮状态
   document.getElementById('btn-start').disabled = running;
   document.getElementById('btn-stop').disabled = !running;
 }
@@ -981,24 +1153,22 @@ function fmtUptime(sec) {
   return Math.floor(sec/3600) + 'h ' + Math.floor((sec%3600)/60) + 'm';
 }
 
-// ── 桥接控制 ──
+// ── Bridge Control ──
 async function startBridge() {
   showCtrlLoading(true);
   await fetch('/api/bridge/start', {method:'POST'});
   setTimeout(() => { fetchStatus(); showCtrlLoading(false); }, 800);
 }
-
 async function stopBridge() {
   showCtrlLoading(true);
   await fetch('/api/bridge/stop', {method:'POST'});
   setTimeout(() => { fetchStatus(); showCtrlLoading(false); }, 500);
 }
-
 function showCtrlLoading(on) {
   document.getElementById('ctrl-saving').classList.toggle('show', on);
 }
 
-// ── 保存配置 ──
+// ── Save Config ──
 async function saveXiaomi() {
   const old = cfg.xiaomi || {};
   cfg.xiaomi = {
@@ -1007,16 +1177,13 @@ async function saveXiaomi() {
     hardware: gv('mi-hardware'),
     device_did: gv('mi-did'),
     tts_reply: document.getElementById('mi-tts').checked,
-    cookie_text: old.cookie_text || '', // 保留 Cookie 登录保存的 token
+    cookie_text: old.cookie_text || '',
   };
   await saveConfig('xiaomi');
 }
 
 async function saveHA() {
-  cfg.homeassistant = {
-    url: gv('ha-url'),
-    token: gv('ha-token'),
-  };
+  cfg.homeassistant = { url: gv('ha-url'), token: gv('ha-token') };
   await saveConfig('ha');
 }
 
@@ -1037,8 +1204,8 @@ async function saveRules() {
 }
 
 async function saveConfig(section) {
-  const alertId = {xiaomi:'xiaomi-alert', ha:'ha-alert', rules:'rules-alert', adv:'adv-alert'}[section] || 'dash-alert';
-  const a = document.getElementById(alertId);
+  const alertMap = {xiaomi:'xiaomi-alert', ha:'ha-alert', rules:'rules-alert', adv:'adv-alert'};
+  const a = document.getElementById(alertMap[section] || 'dash-alert');
   try {
     const r = await fetch('/api/config', {
       method: 'POST',
@@ -1046,22 +1213,21 @@ async function saveConfig(section) {
       body: JSON.stringify({config: cfg})
     });
     const d = await r.json();
-    if (d.ok) showAlert(a, 'ok', '✓ 保存成功');
-    else showAlert(a, 'err', '✗ 保存失败');
+    showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '\u2713 ' : '\u2717 ') + (d.ok ? '保存成功' : '保存失败'));
   } catch(e) {
-    showAlert(a, 'err', '✗ ' + e.message);
+    showAlert(a, 'err', '\u2717 ' + e.message);
   }
   setTimeout(() => a.classList.remove('show'), 3000);
 }
 
-// ── 测试小米连接 ──
+// ── Test Xiaomi ──
 async function testXiaomi() {
   const a = document.getElementById('xiaomi-alert');
   if (!gv('mi-username') && !(cfg.xiaomi||{}).username) {
-    showAlert(a, 'err', '✗ 请先填写账号和密码');
+    showAlert(a, 'err', '\u2717 请先填写账号和密码');
     return;
   }
-  showAlert(a, 'warn', '⟳ 正在登录并获取设备...');
+  showAlert(a, 'warn', '\u27F3 正在登录并获取设备...');
   try {
     const ct = document.getElementById('mi-cookie-text')?.value?.trim() || '';
     const r = await fetch('/api/test/xiaomi', {
@@ -1072,83 +1238,21 @@ async function testXiaomi() {
     const d = await r.json();
     if (d.need_verify) {
       a.className = 'alert alert-warn show';
-      a.innerHTML = '⚠ ' + escHtml(d.msg) + '<br><a href="' + escAttr(d.verify_url) + '" target="_blank" style="color:var(--orange);font-weight:bold;font-size:14px">📱 点击此处打开短信验证页面</a>';
-      // 显示 STS URL 输入区
+      a.innerHTML = '\u26A0 ' + escHtml(d.msg) + '<br><a href="' + escAttr(d.verify_url) + '" target="_blank" style="color:var(--accent);font-weight:600;font-size:13px">\uD83D\uDCF1 点击此处打开短信验证页面</a>';
       document.getElementById('mi-sts-card').style.display = '';
     } else {
-      showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '✓ ' : '✗ ') + d.msg);
+      showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '\u2713 ' : '\u2717 ') + d.msg);
       document.getElementById('mi-sts-card').style.display = 'none';
     }
-    if (d.ok && d.devices && d.devices.length > 0) {
-      renderDeviceList(d.devices);
-    }
+    if (d.ok && d.devices && d.devices.length > 0) renderDeviceList(d.devices);
   } catch(e) {
-    showAlert(a, 'err', '✗ 请求失败: ' + e.message);
+    showAlert(a, 'err', '\u2717 请求失败: ' + e.message);
   }
 }
 
-async function submitStsUrl() {
-  const a = document.getElementById('xiaomi-alert');
-  const url = document.getElementById('mi-sts-url').value.trim();
-  if (!url || !url.startsWith('https://api2.mina.mi.com/sts')) {
-    showAlert(a, 'err', '✗ 请粘贴短信验证后浏览器地址栏中的完整 URL（以 https://api2.mina.mi.com/sts 开头）');
-    return;
-  }
-  showAlert(a, 'warn', '⟳ 正在自动获取 token...');
-  try {
-    const r = await fetch('/api/test/xiaomi/verify', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({cookie_text: url})
-    });
-    const d = await r.json();
-    showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '✓ ' : '✗ ') + d.msg);
-    if (d.ok) {
-      document.getElementById('mi-sts-card').style.display = 'none';
-      if (d.devices && d.devices.length > 0) {
-        renderDeviceList(d.devices);
-      }
-    }
-  } catch(e) {
-    showAlert(a, 'err', '✗ 请求失败: ' + e.message);
-  }
-}
-
-async function submitXiaomiCookie() {
-  const a = document.getElementById('xiaomi-alert');
-  const ct = document.getElementById('mi-cookie-text').value.trim();
-  // 支持 STS URL 和 Cookie 两种格式
-  if (!ct) { showAlert(a, 'err', '✗ 请粘贴内容'); return; }
-  if (ct.startsWith('https://')) {
-    document.getElementById('mi-sts-url').value = ct;
-    return submitStsUrl();
-  }
-  if (!ct.includes('userId')) {
-    showAlert(a, 'err', '✗ Cookie 中缺少 userId，如果是短信验证后的跳转 URL 请粘贴到上方输入框');
-    return;
-  }
-  showAlert(a, 'warn', '⟳ 正在注入 Cookie 并登录...');
-  try {
-    const r = await fetch('/api/test/xiaomi/verify', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({cookie_text: ct})
-    });
-    const d = await r.json();
-    showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '✓ ' : '✗ ') + d.msg);
-    if (d.ok && d.devices && d.devices.length > 0) {
-      renderDeviceList(d.devices);
-    }
-  } catch(e) {
-    showAlert(a, 'err', '✗ 验证请求失败: ' + e.message);
-  }
-}
-
-// ── QR 扫码登录（绕过短信验证） ──
-let qrPollTimer = null;
 async function qrLogin() {
   const a = document.getElementById('xiaomi-alert');
-  showAlert(a, 'warn', '⟳ 正在生成二维码...');
+  showAlert(a, 'warn', '\u27F3 正在生成二维码...');
   try {
     const r = await fetch('/api/qr/login', {method:'POST'});
     const d = await r.json();
@@ -1157,14 +1261,14 @@ async function qrLogin() {
       document.getElementById('qr-area').style.display = '';
       document.getElementById('qr-msg').textContent = '请用米家 App 扫描二维码';
       document.getElementById('qr-status').textContent = '等待扫码...';
-      showAlert(a, 'warn', '📱 请用米家 App 扫描下方二维码');
+      showAlert(a, 'warn', '\uD83D\uDCF1 请用米家 App 扫描下方二维码');
       if (qrPollTimer) clearInterval(qrPollTimer);
       qrPollTimer = setInterval(pollQrLogin, 3000);
     } else {
-      showAlert(a, 'err', '✗ ' + (d.msg||'生成二维码失败'));
+      showAlert(a, 'err', '\u2717 ' + (d.msg||'生成二维码失败'));
     }
   } catch(e) {
-    showAlert(a, 'err', '✗ ' + e.message);
+    showAlert(a, 'err', '\u2717 ' + e.message);
   }
 }
 
@@ -1177,60 +1281,38 @@ async function pollQrLogin() {
       document.getElementById('qr-status').textContent = d.msg;
       document.getElementById('qr-area').style.display = 'none';
       const a = document.getElementById('xiaomi-alert');
-      showAlert(a, 'ok', '✓ ' + d.msg);
-      // 刷新设备列表
+      showAlert(a, 'ok', '\u2713 ' + d.msg);
       const r2 = await fetch('/api/test/xiaomi', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
+        method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({username: gv('mi-username'), password: gv('mi-password'), use_saved: true})
       });
       const d2 = await r2.json();
-      if (d2.ok && d2.devices && d2.devices.length > 0) {
-        renderDeviceList(d2.devices);
-      }
+      if (d2.ok && d2.devices && d2.devices.length > 0) renderDeviceList(d2.devices);
     } else if (!d.ok) {
       document.getElementById('qr-status').textContent = d.msg || '错误';
     }
   } catch(e) {}
 }
 
-// ── 设备管理 ──
-let deviceAliases = {};
-
+// ── Devices ──
 async function loadDevices() {
   const a = document.getElementById('devices-alert');
   try {
-    const [dr, ar] = await Promise.all([
-      fetch('/api/devices'), fetch('/api/aliases')
-    ]);
+    const [dr, ar] = await Promise.all([fetch('/api/devices'), fetch('/api/aliases')]);
     const dd = await dr.json();
     const ad = await ar.json();
     deviceAliases = ad.aliases || {};
     if (!dd.ok) { showAlert(a, 'err', dd.msg); return; }
-    document.getElementById('device-count').textContent = dd.count + ' 个设备';
-    renderDeviceList2(dd.devices);
+    document.getElementById('device-count').textContent = dd.count + ' \u4E2A\u8BBE\u5907';
+    const list = document.getElementById('device-list');
+    const domainNames = {light:'\uD83D\uDCA1 \u706F\u5149',switch:'\uD83D\uDD0C \u5F00\u5173',climate:'\uD83C\uDF21\uFE0F \u7A7A\u8C03',scene:'\uD83C\uDFAC \u573A\u666F',media_player:'\uD83D\uDCFA \u5A92\u4F53',script:'\u26A1 \u811A\u672C',automation:'\uD83E\uDD16 \u81EA\u52A8\u5316',input_boolean:'\uD83D\uDD18 \u865A\u62DF\u5F00\u5173',fan:'\uD83C\uDF1F \u98CE\u6247',cover:'\uD83E\uDE9F \u7A97\u5E18',lock:'\uD83D\uDD12 \u95E8\u9501',vacuum:'\uD83E\uDDF9 \u626B\u5730\u673A'};
+    list.innerHTML = dd.devices.map(d => {
+      const alias = deviceAliases[d.entity_id] || '';
+      return '<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">' + escHtml(d.name) + '</div><div class="device-meta">' + escHtml(d.entity_id) + ' <span class="domain-tag">[' + (domainNames[d.domain]||d.domain) + ']</span></div></div><input type="text" class="alias-input" value="' + escHtml(alias) + '" placeholder="\u522B\u540D..." onchange="saveAlias(\'' + escAttr(d.entity_id) + '\', this.value)"></div></div>';
+    }).join('');
   } catch(e) {
-    showAlert(a, 'err', '加载失败: ' + e.message);
+    showAlert(a, 'err', '\u52A0\u8F7D\u5931\u8D25: ' + e.message);
   }
-}
-
-function renderDeviceList2(devices) {
-  const list = document.getElementById('device-list');
-  const domainNames = {light:'灯光',switch:'开关',climate:'空调',scene:'场景',media_player:'媒体',script:'脚本',automation:'自动化',input_boolean:'虚拟开关',fan:'风扇',cover:'窗帘',lock:'门锁',vacuum:'扫地机'};
-  list.innerHTML = devices.map(d => {
-    const alias = deviceAliases[d.entity_id] || '';
-    return `<div class="rule-item">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;color:var(--text-bright)">${escHtml(d.name)}</div>
-          <div style="font-size:10px;color:var(--text-dim);font-family:var(--mono);margin-top:2px">${escHtml(d.entity_id)} <span style="color:var(--orange)">[${domainNames[d.domain]||d.domain}]</span></div>
-        </div>
-        <input type="text" value="${escHtml(alias)}" placeholder="起个名字..."
-          style="width:160px;background:var(--bg0);border:1px solid var(--border);border-radius:var(--r);padding:4px 8px;color:var(--text);font-size:12px"
-          onchange="saveAlias('${escAttr(d.entity_id)}', this.value)">
-      </div>
-    </div>`;
-  }).join('');
 }
 
 async function saveAlias(eid, alias) {
@@ -1242,17 +1324,17 @@ async function saveAlias(eid, alias) {
   deviceAliases[eid] = alias.trim();
 }
 
-// ── 定时任务 ──
+// ── Schedules ──
 async function loadSchedules() {
   const a = document.getElementById('schedules-alert');
   try {
     const r = await fetch('/api/automations');
     const d = await r.json();
     if (!d.ok) { showAlert(a, 'err', d.msg); return; }
-    document.getElementById('schedule-count').textContent = d.count + ' 个定时任务';
+    document.getElementById('schedule-count').textContent = d.count + ' \u4E2A\u5B9A\u65F6\u4EFB\u52A1';
     const list = document.getElementById('schedule-list');
     if (!d.automations.length) {
-      list.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:24px">暂无定时任务，对小爱说"每天七点半打开热水器"即可创建</div>';
+      list.innerHTML = '<div class="empty-state">\u6682\u65E0\u5B9A\u65F6\u4EFB\u52A1<br><span style="font-size:11px">\u5BF9\u5C0F\u7231\u8BF4\u300C\u6BCF\u5929\u4E03\u70B9\u534A\u6253\u5F00\u70ED\u6C34\u5668\u300D\u5373\u53EF\u521B\u5EFA</span></div>';
       return;
     }
     list.innerHTML = d.automations.map(s => {
@@ -1260,35 +1342,23 @@ async function loadSchedules() {
       const eid = escHtml(s.entity_id);
       const id = s.entity_id.replace('automation.', '');
       const state = s.state === 'on';
-      const last = s.last_triggered ? new Date(s.last_triggered).toLocaleString('zh-CN') : '从未触发';
-      return `<div class="rule-item">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;color:var(--text-bright)">${name}</div>
-            <div style="font-size:10px;color:var(--text-dim);font-family:var(--mono);margin-top:2px">${eid}</div>
-            <div style="font-size:10px;color:var(--text-dim);margin-top:2px">上次触发: ${last}</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:${state?'var(--green-dim)':'var(--red-dim)'};color:${state?'var(--green)':'var(--red)'}">${state?'启用':'禁用'}</span>
-            <button class="rule-del" onclick="deleteSchedule('${escAttr(id)}')">✕ 删除</button>
-          </div>
-        </div>
-      </div>`;
+      const last = s.last_triggered ? new Date(s.last_triggered).toLocaleString('zh-CN') : '\u4ECE\u672A\u89E6\u53D1';
+      return '<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">' + name + '</div><div class="device-meta">' + eid + '</div><div style="font-size:10px;color:var(--text-quaternary);margin-top:2px">\u4E0A\u6B21\u89E6\u53D1: ' + last + '</div></div><div style="display:flex;align-items:center;gap:10px"><span class="schedule-state ' + (state?'on':'off') + '">' + (state?'\u5DF2\u542F\u7528':'\u5DF2\u7981\u7528') + '</span><button class="rule-del" onclick="deleteSchedule(\'' + escAttr(id) + '\')">\u2715 \u5220\u9664</button></div></div></div>';
     }).join('');
   } catch(e) {
-    showAlert(a, 'err', '加载失败: ' + e.message);
+    showAlert(a, 'err', '\u52A0\u8F7D\u5931\u8D25: ' + e.message);
   }
 }
 
 async function deleteSchedule(id) {
-  if (!confirm('确定删除此定时任务？')) return;
+  if (!confirm('\u786E\u5B9A\u5220\u9664\u6B64\u5B9A\u65F6\u4EFB\u52A1\uFF1F')) return;
   const a = document.getElementById('schedules-alert');
   try {
     const r = await fetch('/api/automations/' + encodeURIComponent(id), {method:'DELETE'});
     const d = await r.json();
-    if (d.ok) { showAlert(a, 'ok', '已删除'); loadSchedules(); }
-    else showAlert(a, 'err', d.detail || '删除失败');
-  } catch(e) { showAlert(a, 'err', '删除失败: ' + e.message); }
+    if (d.ok) { showAlert(a, 'ok', '\u5DF2\u5220\u9664'); loadSchedules(); }
+    else showAlert(a, 'err', d.detail || '\u5220\u9664\u5931\u8D25');
+  } catch(e) { showAlert(a, 'err', '\u5220\u9664\u5931\u8D25: ' + e.message); }
 }
 
 function renderDeviceList(devices) {
@@ -1296,22 +1366,13 @@ function renderDeviceList(devices) {
   const container = document.getElementById('mi-devices');
   const countEl = document.getElementById('mi-device-count');
   box.style.display = '';
-  countEl.textContent = '(' + devices.length + ' 台)';
-  container.innerHTML = devices.map((d, i) => {
-    const name = escHtml(d.name || '未知设备');
+  countEl.textContent = '(' + devices.length + ' \u53F0)';
+  container.innerHTML = devices.map(d => {
+    const name = escHtml(d.name || '\u672A\u77E5\u8BBE\u5907');
     const hw = escHtml(d.hardware || d.model || '');
     const did = escHtml(d.deviceID || d.did || '');
-    return `<div class="rule-item" style="cursor:pointer" onclick="selectDevice('${escAttr(hw)}','${escAttr(did)}')" title="点击选择此设备">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <span style="color:var(--text-bright);font-size:14px">${name}</span>
-          <span style="color:var(--text-dim);font-size:11px;margin-left:10px">${hw}</span>
-        </div>
-        <span style="color:var(--text-dim);font-size:10px;font-family:var(--mono)">DID: ${did ? did.substring(0,12)+'...' : '—'}</span>
-      </div>
-    </div>`;
+    return '<div class="rule-item" style="cursor:pointer" onclick="selectDevice(\'' + escAttr(hw) + '\',\'' + escAttr(did) + '\')" title="\u70B9\u51FB\u9009\u62E9\u6B64\u8BBE\u5907"><div style="display:flex;align-items:center;justify-content:space-between"><div><span style="color:var(--text-primary);font-size:14px;font-weight:500">' + name + '</span><span style="color:var(--text-tertiary);font-size:11px;margin-left:10px">' + hw + '</span></div><span style="color:var(--text-quaternary);font-size:10px;font-family:var(--mono)">DID: ' + (did ? did.substring(0,12)+'...' : '\u2014') + '</span></div></div>';
   }).join('');
-  // 自动选中第一台设备
   if (devices.length > 0) {
     const first = devices[0];
     selectDevice(first.hardware || first.model || '', first.deviceID || first.did || '');
@@ -1324,13 +1385,13 @@ function selectDevice(hw, did) {
 }
 
 function escAttr(s) {
-  return String(s||'').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  return String(s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
 }
 
-// ── 测试 HA 连接 ──
+// ── Test HA ──
 async function testHA() {
   const a = document.getElementById('ha-alert');
-  showAlert(a, 'warn', '⟳ 正在测试连接...');
+  showAlert(a, 'warn', '\u27F3 正在测试连接...');
   try {
     const r = await fetch('/api/test/ha', {
       method: 'POST',
@@ -1338,32 +1399,30 @@ async function testHA() {
       body: JSON.stringify({url: gv('ha-url'), token: gv('ha-token')})
     });
     const d = await r.json();
-    showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '✓ ' : '✗ ') + d.msg);
+    showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '\u2713 ' : '\u2717 ') + d.msg);
   } catch(e) {
-    showAlert(a, 'err', '✗ 请求失败: ' + e.message);
+    showAlert(a, 'err', '\u2717 请求失败: ' + e.message);
   }
 }
 
-// ── 域/服务中文映射 ──
+// ── Domain Map ──
 const DOMAIN_INFO = {
-  light:       { name:'灯光', icon:'💡', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[{key:'brightness_pct',label:'亮度百分比',placeholder:'{0}'}] },
-  switch:      { name:'开关/插座', icon:'🔌', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[] },
-  climate:     { name:'空调/温控', icon:'🌡️', services:{set_hvac_mode:'打开',turn_off:'关闭',set_temperature:'设置温度'}, extras:[{key:'hvac_mode',label:'运行模式(cool/heat/dry)',placeholder:'cool'},{key:'temperature',label:'目标温度',placeholder:'{0}'},{key:'delay_minutes',label:'延迟关（分钟）',placeholder:'{0}'}] },
-  scene:       { name:'场景', icon:'🎬', services:{turn_on:'激活'}, extras:[] },
-  media_player:{ name:'媒体/电视', icon:'📺', services:{turn_on:'打开',turn_off:'关闭',media_play:'播放',media_pause:'暂停'}, extras:[] },
-  script:      { name:'脚本', icon:'⚡', services:{turn_on:'执行'}, extras:[] },
-  automation:  { name:'自动化', icon:'🤖', services:{turn_on:'启用',turn_off:'禁用'}, extras:[] },
-  input_boolean:{ name:'虚拟开关', icon:'🔘', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[] },
+  light:       { name:'灯光', icon:'\uD83D\uDCA1', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[{key:'brightness_pct',label:'亮度百分比',placeholder:'{0}'}] },
+  switch:      { name:'开关/插座', icon:'\uD83D\uDD0C', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[] },
+  climate:     { name:'空调/温控', icon:'\uD83C\uDF21\uFE0F', services:{set_hvac_mode:'打开',turn_off:'关闭',set_temperature:'设置温度'}, extras:[{key:'hvac_mode',label:'运行模式(cool/heat/dry)',placeholder:'cool'},{key:'temperature',label:'目标温度',placeholder:'{0}'},{key:'delay_minutes',label:'延迟关（分钟）',placeholder:'{0}'}] },
+  scene:       { name:'场景', icon:'\uD83C\uDFAC', services:{turn_on:'激活'}, extras:[] },
+  media_player:{ name:'媒体/电视', icon:'\uD83D\uDCFA', services:{turn_on:'打开',turn_off:'关闭',media_play:'播放',media_pause:'暂停'}, extras:[] },
+  script:      { name:'脚本', icon:'\u26A1', services:{turn_on:'执行'}, extras:[] },
+  automation:  { name:'自动化', icon:'\uD83E\uDD16', services:{turn_on:'启用',turn_off:'禁用'}, extras:[] },
+  input_boolean:{ name:'虚拟开关', icon:'\uD83D\uDD18', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[] },
 };
 
-// ── 规则编辑器（可视化版） ──
+// ── Rule Editor ──
 function renderRules() {
   const rules = cfg.intent_rules || [];
   const list = document.getElementById('rule-list');
   list.innerHTML = '';
-  rules.forEach((rule, i) => {
-    list.appendChild(buildRuleEl(rule, i));
-  });
+  rules.forEach((rule, i) => { list.appendChild(buildRuleEl(rule, i)); });
 }
 
 function buildRuleEl(rule, i) {
@@ -1371,64 +1430,31 @@ function buildRuleEl(rule, i) {
   const domain = action.domain || 'light';
   const info = DOMAIN_INFO[domain] || DOMAIN_INFO.light;
   const skipExtra = new Set(['domain','service','entity_id','reply','temperature','brightness_pct','delay_minutes','hvac_mode']);
-
   const div = document.createElement('div');
   div.className = 'rule-item';
   div.dataset.idx = i;
-  div.innerHTML = `
-    <div class="rule-header">
-      <span class="rule-num">#${i+1}</span>
-      <button class="rule-del" onclick="deleteRule(${i})">✕ 删除</button>
-    </div>
-    <div class="rule-grid">
-      <div class="form-field full">
-        <label>你说的话（{num} 匹配数字，括号内为可选项）</label>
-        <input type="text" class="r-pattern" value="${escHtml(rule.pattern||'')}" placeholder="打开客厅空调">
-      </div>
-      <div class="form-field" style="grid-column:1/-1">
-        <label>控制什么设备</label>
-        <div class="domain-select">
-          ${Object.entries(DOMAIN_INFO).map(([d,inf]) =>
-            `<button class="domain-btn ${d===domain?'active':''}" onclick="switchDomain(this,'${d}')" title="${inf.name}">
-              <span class="domain-icon">${inf.icon}</span><span>${inf.name}</span>
-            </button>`
-          ).join('')}
-        </div>
-        <input type="hidden" class="r-domain" value="${escHtml(domain)}">
-      </div>
-      <div class="form-field">
-        <label>操作</label>
-        <select class="r-service" onchange="updateExtraFields(this)">
-          ${Object.entries(info.services).map(([s,label]) =>
-            `<option value="${s}" ${action.service===s?'selected':''}>${label}</option>`
-          ).join('')}
-        </select>
-      </div>
-      <div class="form-field">
-        <label>实体 ID（在 HA 中查看）</label>
-        <input type="text" class="r-entity" value="${escHtml(action.entity_id||'')}" placeholder="climate.xxx_climate">
-      </div>
-      <div class="extra-fields">${buildExtraFields(info, action, skipExtra)}</div>
-      <div class="form-field full">
-        <label>回复文字</label>
-        <input type="text" class="r-reply" value="${escHtml(action.reply||'好的')}" placeholder="好的，已完成">
-      </div>
-      <div class="form-field full">
-        <label>其他参数（JSON，可选）</label>
-        <input type="text" class="r-extra" value="${escHtml(getExtra2(action, skipExtra))}" placeholder='{"brightness_pct":"{0}"}'>
-      </div>
-    </div>`;
+  div.innerHTML = '<div class="rule-header"><span class="rule-num">#' + (i+1) + '</span><button class="rule-del" onclick="deleteRule(' + i + ')">\u2715 \u5220\u9664</button></div><div class="rule-grid"><div class="form-field full"><label>\u4F60\u8BF4\u7684\u8BDD\uFF08{num} \u5339\u914D\u6570\u5B57\uFF0C\u62EC\u53F7\u5185\u4E3A\u53EF\u9009\u9879\uFF09</label><input type="text" class="r-pattern" value="' + escHtml(rule.pattern||'') + '" placeholder="\u6253\u5F00\u5BA2\u5385\u706F"></div><div class="form-field" style="grid-column:1/-1"><label>\u63A7\u5236\u4EC0\u4E48\u8BBE\u5907</label><div class="domain-select">';
+  Object.entries(DOMAIN_INFO).forEach(([d,inf]) => {
+    div.innerHTML += '<button class="domain-btn ' + (d===domain?'active':'') + '" onclick="switchDomain(this,\'' + d + '\')" title="' + inf.name + '"><span class="domain-icon">' + inf.icon + '</span><span>' + inf.name + '</span></button>';
+  });
+  div.innerHTML += '</div><input type="hidden" class="r-domain" value="' + escHtml(domain) + '"></div><div class="form-field"><label>\u64CD\u4F5C</label><select class="r-service" onchange="updateExtraFields(this)">';
+  Object.entries(info.services).forEach(([s,label]) => {
+    div.innerHTML += '<option value="' + s + '" ' + (action.service===s?'selected':'') + '>' + label + '</option>';
+  });
+  div.innerHTML += '</select></div><div class="form-field"><label>\u5B9E\u4F53 ID</label><input type="text" class="r-entity" value="' + escHtml(action.entity_id||'') + '" placeholder="climate.xxx_climate"></div><div class="extra-fields">';
+  if (info.extras.length) {
+    info.extras.forEach(ext => {
+      div.innerHTML += '<div class="form-field"><label>' + ext.label + '</label><input type="text" class="r-extra-kv" data-key="' + ext.key + '" value="' + escHtml(action[ext.key]||'') + '" placeholder="' + (ext.placeholder||'') + '"></div>';
+    });
+  }
+  div.innerHTML += '</div><div class="form-field full"><label>\u56DE\u590D\u6587\u5B57</label><input type="text" class="r-reply" value="' + escHtml(action.reply||'\u597D\u7684') + '" placeholder="\u597D\u7684\uFF0C\u5DF2\u5B8C\u6210"></div><div class="form-field full"><label>\u5176\u4ED6\u53C2\u6570\uFF08JSON\uFF09</label><input type="text" class="r-extra" value="' + escHtml(getExtra2(action, skipExtra)) + '" placeholder=\'{"brightness_pct":"{0}"}\'></div></div>';
   return div;
 }
 
-function buildExtraFields(info, action, skipExtra) {
-  if (!info.extras.length) return '';
-  return info.extras.map(ext => `
-    <div class="form-field">
-      <label>${ext.label}</label>
-      <input type="text" class="r-extra-kv" data-key="${ext.key}" value="${escHtml(action[ext.key]||'')}" placeholder="${ext.placeholder||''}">
-    </div>
-  `).join('');
+function getExtra2(action, skip) {
+  const extra = {};
+  for (const [k,v] of Object.entries(action)) if (!skip.has(k)) extra[k]=v;
+  return Object.keys(extra).length ? JSON.stringify(extra) : '';
 }
 
 function switchDomain(btn, domain) {
@@ -1438,22 +1464,12 @@ function switchDomain(btn, domain) {
   item.querySelector('.r-domain').value = domain;
   const info = DOMAIN_INFO[domain];
   const sel = item.querySelector('.r-service');
-  sel.innerHTML = Object.entries(info.services).map(([s,label]) =>
-    `<option value="${s}">${label}</option>`
-  ).join('');
+  sel.innerHTML = Object.entries(info.services).map(([s,label]) => '<option value="'+s+'">'+label+'</option>').join('');
   const extrasDiv = item.querySelector('.extra-fields');
-  extrasDiv.innerHTML = buildExtraFields(info, {}, new Set(['domain','service','entity_id','reply','temperature','brightness_pct','delay_minutes','hvac_mode']));
+  extrasDiv.innerHTML = info.extras.length ? info.extras.map(ext => '<div class="form-field"><label>'+ext.label+'</label><input type="text" class="r-extra-kv" data-key="'+ext.key+'" value="" placeholder="'+(ext.placeholder||'')+'"></div>').join('') : '';
 }
 
-function updateExtraFields(sel) {
-  // placeholder for service-specific extra fields
-}
-
-function getExtra2(action, skip) {
-  const extra = {};
-  for (const [k,v] of Object.entries(action)) if (!skip.has(k)) extra[k]=v;
-  return Object.keys(extra).length ? JSON.stringify(extra) : '';
-}
+function updateExtraFields(sel) {}
 
 function collectRulesFromUI() {
   const items = document.querySelectorAll('.rule-item');
@@ -1462,18 +1478,14 @@ function collectRulesFromUI() {
       domain: el.querySelector('.r-domain').value,
       service: el.querySelector('.r-service').value,
       entity_id: el.querySelector('.r-entity').value.trim(),
-      reply: el.querySelector('.r-reply').value.trim() || '好的',
+      reply: el.querySelector('.r-reply').value.trim() || '\u597D\u7684',
     };
-    // 收集预定义字段
     el.querySelectorAll('.r-extra-kv').forEach(inp => {
       const v = inp.value.trim();
       if (v) action[inp.dataset.key] = v;
     });
-    // 收集 JSON 额外参数
     const extra = el.querySelector('.r-extra').value.trim();
-    if (extra) {
-      try { Object.assign(action, JSON.parse(extra)); } catch {}
-    }
+    if (extra) { try { Object.assign(action, JSON.parse(extra)); } catch {} }
     return { pattern: el.querySelector('.r-pattern').value.trim(), action };
   });
 }
@@ -1481,12 +1493,10 @@ function collectRulesFromUI() {
 function addRule() {
   collectRulesFromUI();
   cfg.intent_rules = cfg.intent_rules || [];
-  cfg.intent_rules.push({
-    pattern: '',
-    action: { domain: 'light', service: 'turn_on', entity_id: '', reply: '好的' }
-  });
+  cfg.intent_rules.push({pattern:'', action:{domain:'light', service:'turn_on', entity_id:'', reply:'\u597D\u7684'}});
   renderRules();
-  document.querySelector('.rule-list')?.lastElementChild?.scrollIntoView({behavior:'smooth'});
+  const last = document.querySelector('.rule-list')?.lastElementChild;
+  if (last) last.scrollIntoView({behavior:'smooth'});
 }
 
 function deleteRule(i) {
@@ -1495,7 +1505,7 @@ function deleteRule(i) {
   renderRules();
 }
 
-// ── 导入/导出规则 ──
+// ── Export/Import ──
 function exportRules() {
   collectRulesFromUI();
   const blob = new Blob([JSON.stringify(cfg.intent_rules, null, 2)], {type:'application/json'});
@@ -1504,7 +1514,7 @@ function exportRules() {
   a.download = 'rules-backup-' + new Date().toISOString().slice(0,10) + '.json';
   a.click();
   URL.revokeObjectURL(a.href);
-  showAlert(document.getElementById('rules-alert'), 'ok', '✓ 规则已导出');
+  showAlert(document.getElementById('rules-alert'), 'ok', '\u2713 \u89C4\u5219\u5DF2\u5BFC\u51FA');
 }
 
 function importRules() {
@@ -1515,18 +1525,18 @@ function importRules() {
     try {
       const text = await inp.files[0].text();
       const rules = JSON.parse(text);
-      if (!Array.isArray(rules)) throw new Error('格式错误：需要 JSON 数组');
+      if (!Array.isArray(rules)) throw new Error('\u683C\u5F0F\u9519\u8BEF\uFF1A\u9700\u8981 JSON \u6570\u7EC4');
       cfg.intent_rules = rules;
       renderRules();
-      showAlert(document.getElementById('rules-alert'), 'ok', '✓ 已导入 ' + rules.length + ' 条规则（记得保存）');
+      showAlert(document.getElementById('rules-alert'), 'ok', '\u2713 \u5DF2\u5BFC\u5165 ' + rules.length + ' \u6761\u89C4\u5219\uFF08\u8BB0\u5F97\u4FDD\u5B58\uFF09');
     } catch(e) {
-      showAlert(document.getElementById('rules-alert'), 'err', '✗ 导入失败: ' + e.message);
+      showAlert(document.getElementById('rules-alert'), 'err', '\u2717 \u5BFC\u5165\u5931\u8D25: ' + e.message);
     }
   };
   inp.click();
 }
 
-// ── 规则测试 ──
+// ── Test Rule ──
 async function testRule() {
   collectRulesFromUI();
   const text = document.getElementById('test-input').value.trim();
@@ -1540,48 +1550,32 @@ async function testRule() {
   const el = document.getElementById('test-result');
   if (d.matched) {
     el.style.color = d.executed ? 'var(--green)' : 'var(--orange)';
-    el.textContent = (d.executed ? '✓ 已执行' : '⚠ 匹配成功但未执行') + '\n' + (d.msg || '') + '\n\n' + JSON.stringify(d.action, null, 2);
+    el.textContent = (d.executed ? '\u2713 \u5DF2\u6267\u884C' : '\u26A0 \u5339\u914D\u6210\u529F\u4F46\u672A\u6267\u884C') + '\\n' + (d.msg || '') + '\\n\\n' + JSON.stringify(d.action, null, 2);
   } else {
     el.style.color = 'var(--red)';
-    el.textContent = '✗ 未匹配任何规则';
+    el.textContent = '\u2717 \u672A\u5339\u914D\u4EFB\u4F55\u89C4\u5219';
   }
 }
 
-// ── 日志 ──
+// ── Logs ──
 async function fetchLogs() {
   try {
     const r = await fetch('/api/logs?n=80');
     const logs = await r.json();
     const panel = document.getElementById('log-panel');
-    panel.innerHTML = logs.map(l => `
-      <div class="log-line">
-        <span class="log-time">${l.time}</span>
-        <span class="log-lvl-${l.level}">[${l.level}]</span>
-        <span class="log-msg">${escHtml(l.msg)}</span>
-      </div>`).join('');
+    panel.innerHTML = logs.map(l => '<div class="log-line"><span class="log-time">' + l.time + '</span><span class="log-lvl-' + l.level + '">[' + l.level + ']</span><span class="log-msg">' + escHtml(l.msg) + '</span></div>').join('');
     if (autoScroll) panel.scrollTop = panel.scrollHeight;
   } catch {}
 }
-
-function clearLogs() {
-  document.getElementById('log-panel').innerHTML = '';
-}
-
+function clearLogs() { document.getElementById('log-panel').innerHTML = ''; }
 function toggleAutoScroll() {
   autoScroll = !autoScroll;
-  document.getElementById('btn-autoscroll').textContent =
-    '⬇ 自动滚动: ' + (autoScroll ? 'ON' : 'OFF');
+  document.getElementById('btn-autoscroll').textContent = '\u2B1B \u81EA\u52A8\u6EDA\u52A8 ' + (autoScroll ? 'ON' : 'OFF');
 }
 
-// ── 工具 ──
-function showAlert(el, type, msg) {
-  el.className = 'alert alert-' + type + ' show';
-  el.textContent = msg;
-}
-
-function escHtml(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+// ── Utils ──
+function showAlert(el, type, msg) { el.className = 'alert alert-' + type + ' show'; el.textContent = msg; }
+function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 init();
 </script>
