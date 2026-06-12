@@ -5,1006 +5,832 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>小爱 × HA 桥接器</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet">
 <style>
-/* ── Reset & Base ── */
+/* ═══════════ Reset ═══════════ */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-
-:root {
-  --bg-deepest: #08090a;
-  --bg-panel: #0f1011;
-  --bg-surface: #191a1b;
-  --bg-elevated: #222326;
-  --bg-hover: rgba(255,255,255,0.04);
-  --bg-active: rgba(113,112,255,0.1);
-  --text-primary: #f7f8f8;
-  --text-secondary: #d0d6e0;
-  --text-tertiary: #8a8f98;
-  --text-quaternary: #62666d;
-  --accent: #7170ff;
-  --accent-bg: #5e6ad2;
-  --accent-hover: #828fff;
-  --accent-subtle: rgba(113,112,255,0.12);
-  --border-subtle: rgba(255,255,255,0.05);
-  --border-default: rgba(255,255,255,0.08);
-  --border-active: rgba(113,112,255,0.3);
-  --green: #10b981;
-  --green-bg: rgba(16,185,129,0.12);
-  --red: #ef4444;
-  --red-bg: rgba(239,68,68,0.12);
-  --orange: #f59e0b;
-  --orange-bg: rgba(245,158,11,0.12);
-  --blue: #60a5fa;
-  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --r-sm: 4px;
-  --r-md: 6px;
-  --r-lg: 8px;
-  --r-xl: 12px;
+html{font-size:14px}
+body{
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  font-feature-settings:'cv01','ss03','cv05'1;
+  line-height:1.5;
+  min-height:100vh;
+  transition:background .4s,color .4s;
 }
 
-body {
-  background: var(--bg-deepest);
-  color: var(--text-secondary);
-  font-family: var(--sans);
-  font-size: 14px;
-  font-feature-settings: 'cv01', 'ss03';
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  line-height: 1.5;
-  min-height: 100vh;
+/* ═══════════ Theme: Obsidian ═══════════ */
+[data-theme="obsidian"],:root{
+  --page-bg:#090a0d;
+  --panel-bg:#0e1015;
+  --surface-bg:#1a1d23;
+  --elevated-bg:#252830;
+  --hover-bg:rgba(255,255,255,0.035);
+  --active-bg:rgba(120,119,255,0.12);
+  --txt-primary:#eef0f4;
+  --txt-secondary:#c8ccd6;
+  --txt-muted:#7d8292;
+  --txt-dim:#525766;
+  --accent:#7877ff;
+  --accent-hover:#9493ff;
+  --accent-bg:rgba(120,119,255,0.15);
+  --accent-border:rgba(120,119,255,0.35);
+  --green:#2dd48a;
+  --green-bg:rgba(45,212,138,0.12);
+  --green-border:rgba(45,212,138,0.25);
+  --red:#f5595a;
+  --red-bg:rgba(245,89,90,0.12);
+  --red-border:rgba(245,89,90,0.25);
+  --orange:#f5a85a;
+  --orange-bg:rgba(245,168,90,0.12);
+  --blue:#5b9cf6;
+  --border-subtle:rgba(255,255,255,0.05);
+  --border-default:rgba(255,255,255,0.09);
+  --border-accent:rgba(120,119,255,0.3);
+  --shadow-card:0 2px 8px rgba(0,0,0,.3),0 1px 2px rgba(0,0,0,.2);
+  --shadow-elevated:0 8px 32px rgba(0,0,0,.4),0 2px 8px rgba(0,0,0,.3);
+  --glow-accent:0 0 20px rgba(120,119,255,.15);
+  --glow-green:0 0 16px rgba(45,212,138,.12);
+  --r-sm:5px;
+  --r-md:8px;
+  --r-lg:12px;
+  --r-xl:16px;
 }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar{width:6px;height:6px}
+/* ═══════════ Theme: Aurora ═══════════ */
+[data-theme="aurora"]{
+  --page-bg:#0a0f14;
+  --panel-bg:#0f1620;
+  --surface-bg:#1a2430;
+  --elevated-bg:#243040;
+  --hover-bg:rgba(56,189,248,0.06);
+  --active-bg:rgba(56,189,248,0.15);
+  --txt-primary:#e2f0fa;
+  --txt-secondary:#b8d4e8;
+  --txt-muted:#6898b8;
+  --txt-dim:#3d6880;
+  --accent:#38bdf8;
+  --accent-hover:#7dd3fc;
+  --accent-bg:rgba(56,189,248,0.15);
+  --accent-border:rgba(56,189,248,0.35);
+  --green:#34d399;
+  --green-bg:rgba(52,211,153,0.12);
+  --red:#fb7185;
+  --red-bg:rgba(251,113,133,0.12);
+  --border-accent:rgba(56,189,248,0.3);
+  --glow-accent:0 0 20px rgba(56,189,248,.15);
+}
+
+/* ═══════════ Theme: Sunset ═══════════ */
+[data-theme="sunset"]{
+  --page-bg:#120e0c;
+  --panel-bg:#1a1410;
+  --surface-bg:#2a2018;
+  --elevated-bg:#382c22;
+  --hover-bg:rgba(251,146,60,0.06);
+  --active-bg:rgba(251,146,60,0.15);
+  --txt-primary:#f5ece4;
+  --txt-secondary:#e0cfc0;
+  --txt-muted:#b09078;
+  --txt-dim:#7a6050;
+  --accent:#fb923c;
+  --accent-hover:#fdba74;
+  --accent-bg:rgba(251,146,60,0.15);
+  --accent-border:rgba(251,146,60,0.35);
+  --green:#4ade80;
+  --green-bg:rgba(74,222,128,0.12);
+  --red:#f87171;
+  --red-bg:rgba(248,113,113,0.12);
+  --border-accent:rgba(251,146,60,0.3);
+  --glow-accent:0 0 20px rgba(251,146,60,.15);
+}
+
+/* ═══════════ Theme: Crystal ═══════════ */
+[data-theme="crystal"]{
+  --page-bg:#f0f2f5;
+  --panel-bg:#ffffff;
+  --surface-bg:#f7f8fa;
+  --elevated-bg:#ffffff;
+  --hover-bg:rgba(99,102,241,0.06);
+  --active-bg:rgba(99,102,241,0.1);
+  --txt-primary:#1a1a2e;
+  --txt-secondary:#4a4a6a;
+  --txt-muted:#8a8aaa;
+  --txt-dim:#b0b0c8;
+  --accent:#6366f1;
+  --accent-hover:#818cf8;
+  --accent-bg:rgba(99,102,241,0.1);
+  --accent-border:rgba(99,102,241,0.25);
+  --green:#10b981;
+  --green-bg:rgba(16,185,129,0.1);
+  --green-border:rgba(16,185,129,0.2);
+  --red:#ef4444;
+  --red-bg:rgba(239,68,68,0.1);
+  --red-border:rgba(239,68,68,0.2);
+  --orange:#f59e0b;
+  --orange-bg:rgba(245,158,11,0.1);
+  --blue:#3b82f6;
+  --border-subtle:rgba(0,0,0,0.06);
+  --border-default:rgba(0,0,0,0.1);
+  --border-accent:rgba(99,102,241,0.25);
+  --shadow-card:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  --shadow-elevated:0 4px 16px rgba(0,0,0,.1),0 2px 4px rgba(0,0,0,.06);
+  --glow-accent:0 0 12px rgba(99,102,241,.12);
+  --glow-green:0 0 12px rgba(16,185,129,.1);
+}
+
+/* ═══════════ Theme: Frost ═══════════ */
+[data-theme="frost"]{
+  --page-bg:#eaeef3;
+  --panel-bg:#f5f7fa;
+  --surface-bg:#ffffff;
+  --elevated-bg:#ffffff;
+  --hover-bg:rgba(14,165,233,0.06);
+  --active-bg:rgba(14,165,233,0.1);
+  --txt-primary:#0f172a;
+  --txt-secondary:#334155;
+  --txt-muted:#64748b;
+  --txt-dim:#94a3b8;
+  --accent:#0ea5e9;
+  --accent-hover:#38bdf8;
+  --accent-bg:rgba(14,165,233,0.1);
+  --accent-border:rgba(14,165,233,0.25);
+  --green:#14b8a6;
+  --green-bg:rgba(20,184,166,0.1);
+  --red:#f43f5e;
+  --red-bg:rgba(244,63,94,0.1);
+  --border-subtle:rgba(0,0,0,0.05);
+  --border-default:rgba(0,0,0,0.08);
+  --border-accent:rgba(14,165,233,0.25);
+  --shadow-card:0 1px 3px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.03);
+  --shadow-elevated:0 4px 16px rgba(0,0,0,.08);
+  --glow-accent:0 0 12px rgba(14,165,233,.1);
+}
+
+/* ═══════════ Base Layout ═══════════ */
+body{
+  background:var(--page-bg);
+  color:var(--txt-secondary);
+}
+::selection{background:var(--accent-bg);color:var(--accent)}
+::-webkit-scrollbar{width:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border-default);border-radius:3px}
-::-webkit-scrollbar-thumb:hover{background:var(--text-quaternary)}
 
-/* ── Header ── */
-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 24px; height: 52px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border-subtle);
-  position: sticky; top: 0; z-index: 100;
+/* ═══════ Header ═══════ */
+.app-header{
+  position:sticky;top:0;z-index:100;
+  height:48px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;
+  background:var(--panel-bg);
+  border-bottom:1px solid var(--border-subtle);
+  backdrop-filter:blur(12px);
 }
-.logo {
-  display: flex; align-items: center; gap: 10px;
+.app-logo{display:flex;align-items:center;gap:10px}
+.app-logo-mark{
+  width:26px;height:26px;border-radius:6px;
+  background:linear-gradient(135deg,var(--accent),var(--accent-hover));
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-size:11px;font-weight:600;font-family:var(--mono);
+  box-shadow:var(--glow-accent);
 }
-.logo-icon {
-  width: 28px; height: 28px;
-  background: linear-gradient(135deg, var(--accent-bg), var(--accent));
-  border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 10px; font-weight: 600;
-  color: #fff; letter-spacing: -0.5px;
-}
-.logo-text {
-  font-family: var(--sans); font-size: 13px; font-weight: 500;
-  color: var(--text-primary); letter-spacing: -0.1px;
-}
-.header-right {
-  display: flex; align-items: center; gap: 12px;
-}
-.port-badge {
-  font-family: var(--mono); font-size: 11px; font-weight: 500;
-  color: var(--text-tertiary);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
-  padding: 3px 10px; border-radius: 4px;
-}
-.ver-badge {
-  font-family: var(--mono); font-size: 10px; font-weight: 500;
-  color: var(--text-quaternary);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  padding: 2px 8px; border-radius: 3px;
+.app-logo-text{font-size:13px;font-weight:600;color:var(--txt-primary);letter-spacing:-.02em}
+.app-header-right{display:flex;align-items:center;gap:10px}
+.badge{
+  font-family:'JetBrains Mono',monospace;
+  font-size:10px;font-weight:500;padding:2px 10px;
+  border-radius:4px;
+  background:var(--surface-bg);
+  border:1px solid var(--border-default);
+  color:var(--txt-muted);
 }
 
-/* ── Layout ── */
-.layout {
-  display: flex;
-  min-height: calc(100vh - 52px);
-}
+/* ═══════ Layout ═══════ */
+.app-layout{display:flex;min-height:calc(100vh-48px)}
 
-/* ── Sidebar ── */
-nav {
-  width: 220px; flex-shrink: 0;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border-subtle);
-  padding: 16px 8px;
-  display: flex; flex-direction: column;
-  height: calc(100vh - 52px);
-  position: sticky; top: 52px;
-  overflow-y: auto;
+/* ═══════ Sidebar ═══════ */
+.sidebar{
+  width:220px;flex-shrink:0;
+  background:var(--panel-bg);
+  border-right:1px solid var(--border-subtle);
+  padding:12px 8px;
+  display:flex;flex-direction:column;
+  height:calc(100vh-48px);position:sticky;top:48px;
+  overflow-y:auto;
 }
-.nav-section { margin-bottom: 4px; }
-.nav-label {
-  font-family: var(--mono); font-size: 10px; font-weight: 500;
-  color: var(--text-quaternary); letter-spacing: 0.8px; text-transform: uppercase;
-  padding: 8px 10px 6px; display: block;
+.sidebar-section{margin-bottom:2px}
+.sidebar-label{
+  font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--txt-dim);
+  padding:8px 12px 5px;display:block;
 }
-.nav-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 10px; border-radius: var(--r-md); cursor: pointer;
-  color: var(--text-tertiary); font-size: 13px; font-weight: 400;
-  transition: all .12s; border: 1px solid transparent;
-  margin-bottom: 1px; user-select: none;
-  line-height: 1.3;
+.sidebar-item{
+  display:flex;align-items:center;gap:8px;
+  padding:7px 12px;border-radius:var(--r-md);
+  cursor:pointer;
+  color:var(--txt-muted);font-size:13px;font-weight:450;
+  transition:all .12s;
+  border:1px solid transparent;
+  user-select:none;
 }
-.nav-item:hover { color: var(--text-secondary); background: var(--bg-hover); }
-.nav-item.active {
-  color: var(--accent); background: var(--accent-subtle);
-  border-color: var(--border-active);
+.sidebar-item:hover{color:var(--txt-secondary);background:var(--hover-bg)}
+.sidebar-item.active{
+  color:var(--accent);
+  background:var(--active-bg);
+  border-color:var(--border-accent);
 }
-.nav-icon { font-size: 14px; width: 18px; text-align: center; opacity: 0.8; }
-.nav-item.active .nav-icon { opacity: 1; }
+.sidebar-icon{font-size:13px;width:16px;text-align:center;opacity:.7}
+.sidebar-item.active .sidebar-icon{opacity:1}
 
-/* ── Status Widget ── */
-.status-widget {
-  margin-top: auto;
-  padding: 12px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-lg);
+/* ── Theme Switcher ── */
+.theme-section{margin-top:8px;padding:10px 12px}
+.theme-label{
+  font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--txt-dim);margin-bottom:8px;
 }
-.status-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 4px 0;
+.theme-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.theme-swatch{
+  width:100%;height:28px;border-radius:var(--r-sm);
+  border:2px solid var(--border-default);
+  cursor:pointer;transition:all .15s;
+  position:relative;overflow:hidden;
 }
-.status-key {
-  font-family: var(--mono); font-size: 10px; font-weight: 500;
-  color: var(--text-quaternary); text-transform: uppercase; letter-spacing: 0.5px;
-}
-.status-val {
-  font-family: var(--mono); font-size: 11px; font-weight: 500;
-  color: var(--text-secondary);
-  display: flex; align-items: center; gap: 5px;
-}
-.dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--text-quaternary);
-  transition: all .3s;
-}
-.dot.on-green { background: var(--green); box-shadow: 0 0 5px rgba(16,185,129,0.5); }
-.dot.on-red { background: var(--red); box-shadow: 0 0 5px rgba(239,68,68,0.4); }
-.dot.on-orange { background: var(--orange); box-shadow: 0 0 5px rgba(245,158,11,0.4); }
+.theme-swatch:hover{border-color:var(--txt-muted)}
+.theme-swatch.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.theme-swatch .check{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:10px;opacity:0;transition:.15s}
+.theme-swatch.active .check{opacity:1}
 
-/* ── Main ── */
-main {
-  flex: 1; padding: 28px 32px;
-  overflow-y: auto; max-width: 1200px;
+/* ── Status Badge ── */
+.status-card{
+  margin-top:auto;padding:10px 12px;
+  background:var(--surface-bg);
+  border:1px solid var(--border-subtle);
+  border-radius:var(--r-md);
 }
-.page { display: none; }
-.page.active { display: block; }
+.status-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:3px 0;
+}
+.status-key{
+  font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.03em;
+  color:var(--txt-dim);
+}
+.status-value{
+  font-size:11px;font-weight:500;
+  color:var(--txt-secondary);
+  display:flex;align-items:center;gap:5px;
+  font-family:'JetBrains Mono',monospace;
+}
+.status-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:var(--txt-dim);transition:all .3s;
+}
+.status-dot.ok{background:var(--green);box-shadow:0 0 5px var(--green)}
+.status-dot.err{background:var(--red);box-shadow:0 0 5px var(--red)}
+.status-dot.warn{background:var(--orange);box-shadow:0 0 5px var(--orange)}
 
-/* ── Page Header ── */
-.page-header { margin-bottom: 28px; }
-.page-title {
-  font-size: 20px; font-weight: 590;
-  color: var(--text-primary); letter-spacing: -0.24px;
-  display: flex; align-items: center; gap: 10px;
-}
-.page-title .page-icon {
-  width: 28px; height: 28px;
-  background: var(--accent-subtle);
-  border-radius: 6px;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 13px;
-}
-.page-desc {
-  font-size: 13px; color: var(--text-tertiary); font-weight: 400;
-  margin-top: 4px; margin-left: 38px;
-}
+/* ═══════ Main ═══════ */
+.main-content{flex:1;padding:24px 28px;max-width:1160px;overflow-y:auto}
+.page{display:none;animation:fadeIn .2s ease}
+.page.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 
-/* ── Control Bar ── */
-.ctrl-bar {
-  display: flex; gap: 8px; margin-bottom: 24px; align-items: center;
-  flex-wrap: wrap;
+.page-head{margin-bottom:24px}
+.page-title{
+  font-size:18px;font-weight:600;
+  color:var(--txt-primary);letter-spacing:-.02em;
+  display:flex;align-items:center;gap:10px;
 }
+.page-title .icon{
+  width:26px;height:26px;border-radius:6px;
+  background:var(--accent-bg);
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;
+}
+.page-desc{font-size:13px;color:var(--txt-muted);margin-top:2px;margin-left:36px}
+
+/* ═══════ Components ═══════ */
 
 /* ── Buttons ── */
-.btn {
-  font-family: var(--sans); font-size: 13px; font-weight: 500;
-  padding: 7px 16px; border-radius: var(--r-md);
-  border: 1px solid var(--border-default);
-  cursor: pointer; transition: all .12s;
-  display: inline-flex; align-items: center; gap: 6px;
-  background: rgba(255,255,255,0.03);
-  color: var(--text-secondary);
-  letter-spacing: -0.05px;
+.btn-group{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+.btn{
+  font-family:inherit;font-size:13px;font-weight:500;
+  padding:6px 14px;border-radius:var(--r-md);
+  border:1px solid var(--border-default);
+  background:var(--surface-bg);
+  color:var(--txt-secondary);
+  cursor:pointer;transition:all .12s;
+  display:inline-flex;align-items:center;gap:5px;
+  user-select:none;
 }
-.btn:hover {
-  background: rgba(255,255,255,0.06);
-  border-color: var(--text-quaternary);
-  color: var(--text-primary);
-}
-.btn:disabled { opacity: .35; cursor: not-allowed; }
-.btn:active { transform: scale(0.98); }
+.btn:hover{background:var(--hover-bg);border-color:var(--txt-muted);color:var(--txt-primary)}
+.btn:active{transform:scale(.98)}
+.btn:disabled{opacity:.3;pointer-events:none}
 
-.btn-primary {
-  background: var(--accent-bg); border-color: var(--accent);
-  color: #fff; font-weight: 500;
-}
-.btn-primary:hover {
-  background: var(--accent-hover); border-color: var(--accent-hover);
-  color: #fff;
-}
-
-.btn-danger {
-  background: var(--red-bg); border-color: rgba(239,68,68,0.3);
-  color: var(--red);
-}
-.btn-danger:hover {
-  background: var(--red); border-color: var(--red);
-  color: #fff;
-}
-
-.btn-success {
-  background: var(--green-bg); border-color: rgba(16,185,129,0.3);
-  color: var(--green);
-}
-.btn-success:hover {
-  background: var(--green); border-color: var(--green);
-  color: #fff;
-}
+.btn-primary{background:var(--accent-bg);border-color:var(--border-accent);color:var(--accent)}
+.btn-primary:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-success{background:var(--green-bg);border-color:var(--green-border);color:var(--green)}
+.btn-success:hover{background:var(--green);border-color:var(--green);color:#fff}
+.btn-danger{background:var(--red-bg);border-color:var(--red-border);color:var(--red)}
+.btn-danger:hover{background:var(--red);border-color:var(--red);color:#fff}
 
 /* ── Cards ── */
-.card {
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-lg);
-  padding: 20px; margin-bottom: 16px;
-  backdrop-filter: blur(2px);
+.card{
+  background:var(--surface-bg);
+  border:1px solid var(--border-default);
+  border-radius:var(--r-lg);
+  padding:20px;margin-bottom:14px;
+  box-shadow:var(--shadow-card);
 }
-.card-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 16px; padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-subtle);
+.card-head{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:16px;padding-bottom:12px;
+  border-bottom:1px solid var(--border-subtle);
 }
-.card-title {
-  font-size: 11px; font-weight: 590;
-  color: var(--text-quaternary);
-  letter-spacing: 1px; text-transform: uppercase;
-  display: flex; align-items: center; gap: 6px;
+.card-title{
+  font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--txt-muted);
+  display:flex;align-items:center;gap:6px;
 }
-.card-title .card-icon { font-size: 13px; }
 
-/* ── Form Grid ── */
-.form-grid {
-  display: grid; gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+/* ── Stats Grid ── */
+.stat-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:20px}
+.stat-card{
+  background:var(--surface-bg);
+  border:1px solid var(--border-default);
+  border-radius:var(--r-lg);
+  padding:16px 18px;
+  box-shadow:var(--shadow-card);
+  transition:border-color .2s;
 }
-.form-field { display: flex; flex-direction: column; gap: 5px; }
-.form-field.full { grid-column: 1 / -1; }
-label {
-  font-family: var(--mono); font-size: 10px; font-weight: 500;
-  color: var(--text-quaternary);
-  letter-spacing: 0.5px; text-transform: uppercase;
+.stat-val{
+  font-family:'JetBrains Mono',monospace;
+  font-size:26px;font-weight:600;
+  color:var(--txt-primary);line-height:1.1;
 }
-input, select, textarea {
-  background: rgba(0,0,0,0.3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-md);
-  color: var(--text-primary);
-  font-family: var(--sans); font-size: 13px; font-weight: 400;
-  padding: 8px 12px;
-  outline: none; transition: border-color .15s, box-shadow .15s;
-  width: 100%;
+.stat-label{
+  font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--txt-muted);margin-top:5px;
 }
-input:focus, select:focus, textarea:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
-}
-input::placeholder, textarea::placeholder { color: var(--text-quaternary); }
-textarea { resize: vertical; min-height: 72px; font-family: var(--mono); font-size: 12px; }
-select { cursor: pointer; }
-select option { background: var(--bg-surface); color: var(--text-primary); }
+.stat-card.highlight{border-color:var(--border-accent);background:var(--active-bg)}
+.stat-card.highlight .stat-val{color:var(--accent)}
+.stat-card.positive{border-color:var(--green-border)}
+.stat-card.positive .stat-val{color:var(--green)}
 
-.input-row {
-  display: flex; gap: 8px; align-items: flex-end;
+/* ── Forms ── */
+.form-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.form-grid .full{grid-column:1/-1}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{
+  font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--txt-dim);
 }
-.input-row input { flex: 1; }
+.field input,.field select,.field textarea{
+  background:var(--page-bg);
+  border:1px solid var(--border-default);
+  border-radius:var(--r-md);
+  color:var(--txt-primary);
+  font-family:inherit;font-size:13px;font-weight:450;
+  padding:7px 10px;
+  outline:none;transition:all .15s;
+}
+.field input:focus,.field select:focus,.field textarea:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-bg);
+}
+.field input::placeholder,.field textarea::placeholder{color:var(--txt-dim)}
+.field textarea{resize:vertical;min-height:64px;font-family:'JetBrains Mono',monospace;font-size:12px}
+.field select{appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237d8292' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+.field select option{background:var(--surface-bg);color:var(--txt-primary)}
+.input-row{display:flex;gap:6px;align-items:flex-end}
+.input-row input{flex:1}
 
 /* ── Toggle ── */
-.toggle-wrap { display: flex; align-items: center; gap: 10px; }
-.toggle {
-  position: relative; width: 38px; height: 20px;
-  cursor: pointer; flex-shrink: 0;
-}
-.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
-.toggle-track {
-  position: absolute; inset: 0; border-radius: 10px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
-  transition: all .25s;
-}
-.toggle input:checked + .toggle-track {
-  background: rgba(113,112,255,0.2);
-  border-color: var(--accent);
-}
-.toggle-thumb {
-  position: absolute; top: 2px; left: 2px;
-  width: 14px; height: 14px; border-radius: 50%;
-  background: var(--text-quaternary); transition: all .25s;
-}
-.toggle input:checked ~ .toggle-thumb {
-  left: 20px; background: var(--accent);
-}
-.toggle-label { font-size: 13px; color: var(--text-secondary); font-weight: 400; }
+.toggle-wrap{display:flex;align-items:center;gap:8px}
+.toggle{position:relative;width:36px;height:18px;cursor:pointer;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-track{position:absolute;inset:0;border-radius:9px;background:var(--elevated-bg);border:1px solid var(--border-default);transition:.25s}
+.toggle input:checked+.toggle-track{background:var(--accent-bg);border-color:var(--border-accent)}
+.toggle-thumb{position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--txt-dim);transition:.25s}
+.toggle input:checked~.toggle-thumb{left:20px;background:var(--accent)}
+.toggle-label{font-size:13px;color:var(--txt-secondary)}
 
 /* ── Switch ── */
-.switch-label { display: flex; align-items: center; cursor: pointer; gap: 8px; }
-.switch-label input[type=checkbox] { display: none; }
-.switch-slider {
-  width: 38px; height: 20px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: 10px; position: relative; transition: .2s; flex-shrink: 0;
-}
-.switch-slider::after {
-  content: ''; position: absolute; top: 2px; left: 2px;
-  width: 14px; height: 14px; border-radius: 50%;
-  background: var(--text-quaternary); transition: .2s;
-}
-.switch-label input:checked + .switch-slider {
-  border-color: var(--green);
-  background: var(--green-bg);
-}
-.switch-label input:checked + .switch-slider::after {
-  left: 20px; background: var(--green);
-}
+.switch-label{display:flex;align-items:center;cursor:pointer;gap:8px}
+.switch-label input{display:none}
+.switch-track{width:36px;height:18px;background:var(--elevated-bg);border:1px solid var(--border-default);border-radius:9px;position:relative;transition:.2s;flex-shrink:0}
+.switch-track::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--txt-dim);transition:.2s}
+.switch-label input:checked+.switch-track{border-color:var(--green-border);background:var(--green-bg)}
+.switch-label input:checked+.switch-track::after{left:20px;background:var(--green)}
 
-/* ── Alert ── */
-.alert {
-  padding: 10px 14px; border-radius: var(--r-md);
-  font-size: 12px; font-family: var(--mono);
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 16px; display: none;
+/* ── Alerts ── */
+.alert{
+  padding:8px 12px;border-radius:var(--r-md);
+  font-size:12px;font-family:'JetBrains Mono',monospace;
+  display:none;align-items:center;gap:8px;
+  margin-bottom:14px;
 }
-.alert.show { display: flex; }
-.alert-ok { background: var(--green-bg); border: 1px solid rgba(16,185,129,0.25); color: var(--green); }
-.alert-err { background: var(--red-bg); border: 1px solid rgba(239,68,68,0.25); color: var(--red); }
-.alert-warn { background: var(--orange-bg); border: 1px solid rgba(245,158,11,0.25); color: var(--orange); }
+.alert.show{display:flex}
+.alert.ok{background:var(--green-bg);border:1px solid var(--green-border);color:var(--green)}
+.alert.err{background:var(--red-bg);border:1px solid var(--red-border);color:var(--red)}
+.alert.warn{background:var(--orange-bg);border:1px solid var(--orange-border,var(--border-default));color:var(--orange)}
 
 /* ── Log Panel ── */
-.log-panel {
-  background: rgba(0,0,0,0.4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-lg);
-  padding: 14px;
-  font-family: var(--mono); font-size: 12px; line-height: 1.7;
-  height: 420px; overflow-y: auto;
+.log-panel{
+  background:var(--page-bg);
+  border:1px solid var(--border-default);
+  border-radius:var(--r-lg);
+  padding:12px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.7;
+  height:400px;overflow-y:auto;
+  box-shadow:inset 0 2px 8px rgba(0,0,0,.12);
 }
-.log-line { display: flex; gap: 10px; padding: 1px 0; }
-.log-time { color: var(--text-quaternary); flex-shrink: 0; }
-.log-lvl-INFO { color: var(--blue); }
-.log-lvl-WARNING { color: var(--orange); }
-.log-lvl-ERROR { color: var(--red); }
-.log-msg { color: var(--text-secondary); }
+.log-line{display:flex;gap:8px;padding:1px 0}
+.log-time{color:var(--txt-dim);flex-shrink:0}
+.log-lvl-INFO{color:var(--blue)}
+.log-lvl-WARNING{color:var(--orange)}
+.log-lvl-ERROR{color:var(--red)}
+.log-msg{color:var(--txt-secondary)}
 
 /* ── Rule List ── */
-.rule-list { display: flex; flex-direction: column; gap: 10px; }
-.rule-item {
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-lg);
-  padding: 16px;
-  transition: border-color .15s;
+.rule-list{display:flex;flex-direction:column;gap:8px}
+.rule-item{
+  background:var(--page-bg);
+  border:1px solid var(--border-default);
+  border-radius:var(--r-lg);
+  padding:14px;
+  transition:border-color .15s;
 }
-.rule-item:hover { border-color: var(--border-active); }
-.rule-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 12px;
+.rule-item:hover{border-color:var(--border-accent)}
+.rule-head{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:10px;
 }
-.rule-num {
-  font-family: var(--mono); font-size: 10px; font-weight: 500;
-  color: var(--text-quaternary);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  padding: 2px 8px; border-radius: 3px;
+.rule-num{
+  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;
+  color:var(--txt-dim);
+  background:var(--surface-bg);
+  border:1px solid var(--border-subtle);
+  padding:2px 7px;border-radius:3px;
 }
-.rule-del {
-  font-family: var(--mono); font-size: 11px; font-weight: 500;
-  color: var(--red); cursor: pointer; opacity: .6;
-  background: none; border: none;
-  padding: 4px 10px; border-radius: var(--r-sm);
-  transition: all .15s;
+.rule-del{
+  font-size:11px;font-weight:500;
+  color:var(--red);cursor:pointer;opacity:.5;
+  background:none;border:none;
+  padding:3px 8px;border-radius:var(--r-sm);
+  transition:.15s;
 }
-.rule-del:hover { opacity: 1; background: var(--red-bg); }
+.rule-del:hover{opacity:1;background:var(--red-bg)}
+.rule-grid{display:grid;gap:8px;grid-template-columns:1fr 1fr}
+.rule-grid .full{grid-column:1/-1}
+.extra-fields{display:contents}
 
-.rule-grid {
-  display: grid; gap: 10px;
-  grid-template-columns: 1fr 1fr;
+/* ── Domain Select ── */
+.domain-select{display:flex;flex-wrap:wrap;gap:3px}
+.domain-btn{
+  display:flex;align-items:center;gap:3px;
+  padding:5px 9px;
+  background:var(--page-bg);
+  border:1px solid var(--border-default);
+  border-radius:var(--r-md);
+  color:var(--txt-muted);
+  font-size:12px;font-weight:500;cursor:pointer;
+  transition:all .12s;
 }
-.rule-grid .full { grid-column: 1/-1; }
-
-/* ── Domain Buttons ── */
-.domain-select {
-  display: flex; flex-wrap: wrap; gap: 4px;
-}
-.domain-btn {
-  display: flex; align-items: center; gap: 4px;
-  padding: 5px 10px;
-  background: rgba(0,0,0,0.25);
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-md); color: var(--text-tertiary);
-  font-size: 12px; font-weight: 500; cursor: pointer;
-  transition: all .12s;
-}
-.domain-btn:hover { border-color: var(--text-quaternary); color: var(--text-secondary); }
-.domain-btn.active {
-  border-color: var(--accent); color: var(--accent);
-  background: var(--accent-subtle);
-}
-.domain-icon { font-size: 13px; line-height: 1; }
-.extra-fields { display: contents; }
-
-/* ── Dash Grid ── */
-.dash-grid {
-  display: grid; gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  margin-bottom: 20px;
-}
-.dash-card {
-  background: rgba(255,255,255,0.02);
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-lg);
-  padding: 18px 20px;
-  transition: border-color .15s;
-}
-.dash-val {
-  font-family: var(--mono); font-size: 28px; font-weight: 600;
-  color: var(--text-primary); line-height: 1.1;
-}
-.dash-key {
-  font-family: var(--mono); font-size: 10px; font-weight: 500;
-  color: var(--text-quaternary);
-  letter-spacing: 0.8px; text-transform: uppercase;
-  margin-top: 6px;
-}
-.dash-card.highlight {
-  border-color: var(--accent);
-  background: var(--accent-subtle);
-}
-.dash-card.highlight .dash-val { color: var(--accent); }
-.dash-card.card-green { border-color: rgba(16,185,129,0.3); }
-.dash-card.card-green .dash-val { color: var(--green); }
-
-/* ── Quick Start ── */
-.quick-step {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 8px 0;
-  font-size: 13px; color: var(--text-tertiary); line-height: 1.6;
-}
-.quick-step-num {
-  width: 20px; height: 20px; border-radius: 50%;
-  background: var(--accent-subtle);
-  border: 1px solid var(--border-active);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 10px; font-weight: 600;
-  color: var(--accent); flex-shrink: 0;
-  margin-top: 1px;
-}
-.quick-step b { color: var(--text-secondary); }
+.domain-btn:hover{border-color:var(--txt-muted);color:var(--txt-secondary)}
+.domain-btn.active{border-color:var(--accent);color:var(--accent);background:var(--active-bg)}
+.domain-icon{font-size:12px;line-height:1}
 
 /* ── Last Command ── */
-.last-cmd {
-  background: rgba(0,0,0,0.3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-lg); padding: 12px 16px;
-  font-family: var(--mono); font-size: 12px;
-  color: var(--text-tertiary); margin-bottom: 16px;
-  display: flex; align-items: center; justify-content: space-between;
+.last-cmd{
+  background:var(--page-bg);
+  border:1px solid var(--border-default);
+  border-radius:var(--r-lg);padding:10px 16px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  color:var(--txt-muted);margin-bottom:16px;
+  display:flex;align-items:center;justify-content:space-between;
 }
-.last-cmd-text { color: var(--text-primary); }
-.last-cmd-time { color: var(--text-quaternary); font-size: 11px; }
+.last-cmd-text{color:var(--txt-secondary)}
+.last-cmd-time{color:var(--txt-dim);font-size:11px}
 
-/* ── Test Area ── */
-.test-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
-.test-input-row input { flex: 1; }
-.test-result {
-  background: rgba(0,0,0,0.3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-md); padding: 12px;
-  font-family: var(--mono); font-size: 12px;
-  min-height: 56px; color: var(--text-tertiary);
-  white-space: pre-wrap;
-}
+/* ── Quick Steps ── */
+.quick-step{display:flex;align-items:flex-start;gap:10px;padding:6px 0;font-size:13px;color:var(--txt-muted);line-height:1.6}
+.quick-step-num{width:20px;height:20px;border-radius:50%;background:var(--accent-bg);border:1px solid var(--border-accent);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:var(--accent);flex-shrink:0;margin-top:1px}
+.quick-step b{color:var(--txt-secondary)}
 
-/* ── Device Item ── */
-.device-item {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-}
-.device-info { flex: 1; min-width: 0; }
-.device-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.device-meta {
-  font-size: 10px; font-family: var(--mono); font-weight: 500;
-  color: var(--text-quaternary);
-  margin-top: 2px;
-}
-.device-meta .domain-tag { color: var(--accent); }
-
-/* ── Schedule State ── */
-.schedule-state {
-  font-size: 11px; font-weight: 500;
-  padding: 2px 10px; border-radius: 999px;
-  letter-spacing: 0.2px;
-}
-.schedule-state.on { background: var(--green-bg); color: var(--green); border: 1px solid rgba(16,185,129,0.25); }
-.schedule-state.off { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
-
-/* ── Spinner ── */
-.spinner {
-  display: inline-block; width: 12px; height: 12px;
-  border: 2px solid var(--border-default);
-  border-top-color: var(--accent);
-  border-radius: 50%; animation: spin .6s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.saving-indicator {
-  display: none; align-items: center; gap: 6px;
-  font-size: 12px; color: var(--accent); font-weight: 500;
-}
-.saving-indicator.show { display: flex; }
-
-/* ── Empty State ── */
-.empty-state {
-  text-align: center; padding: 40px 20px;
-  color: var(--text-quaternary); font-size: 13px;
+/* ── Test ── */
+.test-row{display:flex;gap:8px;margin-bottom:10px}
+.test-row input{flex:1}
+.test-result{
+  background:var(--page-bg);
+  border:1px solid var(--border-default);
+  border-radius:var(--r-md);padding:10px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  min-height:48px;color:var(--txt-muted);
+  white-space:pre-wrap;
 }
 
-/* ── Alias Input ── */
-.alias-input {
-  width: 150px;
-  background: rgba(0,0,0,0.3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--r-md);
-  padding: 4px 8px;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: var(--sans);
-  outline: none;
-  transition: border-color .15s;
-}
-.alias-input:focus { border-color: var(--accent); }
+/* ── Device / Schedule Items ── */
+.device-item{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.device-info{flex:1;min-width:0}
+.device-name{font-size:13px;font-weight:500;color:var(--txt-primary)}
+.device-meta{font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:500;color:var(--txt-dim);margin-top:2px}
+.device-meta .domain-tag{color:var(--accent)}
+
+.schedule-state{font-size:11px;font-weight:500;padding:2px 10px;border-radius:999px}
+.schedule-state.on{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
+.schedule-state.off{background:var(--red-bg);color:var(--red);border:1px solid var(--red-border)}
+
+.alias-in{width:140px;background:var(--page-bg);border:1px solid var(--border-default);border-radius:var(--r-md);padding:3px 8px;color:var(--txt-primary);font-size:12px;outline:none;transition:.15s}
+.alias-in:focus{border-color:var(--accent)}
+
+/* ── Empty State / Spinner ── */
+.empty-state{text-align:center;padding:36px 20px;color:var(--txt-dim);font-size:13px}
+.spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--border-default);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading{display:none;align-items:center;gap:6px;font-size:12px;color:var(--accent);font-weight:500}
+.loading.show{display:flex}
+
+/* ── QR ── */
+.qr-box{text-align:center;padding:16px;background:var(--page-bg);border-radius:var(--r-lg);border:1px dashed var(--border-default)}
 
 /* ── Responsive ── */
-@media (max-width: 768px) {
-  nav { display: none; }
-  main { padding: 20px 16px; }
-  .form-grid { grid-template-columns: 1fr; }
-  .rule-grid { grid-template-columns: 1fr; }
-  .dash-grid { grid-template-columns: 1fr 1fr; }
-  header { padding: 0 16px; }
+@media(max-width:768px){
+  .sidebar{display:none}
+  .main-content{padding:16px}
+  .form-grid,.rule-grid{grid-template-columns:1fr}
+  .stat-grid{grid-template-columns:1fr 1fr}
+  .app-header{padding:0 12px}
 }
+
+/* ── Theme Swatch Colors ── */
+[data-theme="obsidian"]{--swatch1:#1a1d23;--swatch2:#7877ff}
+[data-theme="aurora"]{--swatch1:#1a2430;--swatch2:#38bdf8}
+[data-theme="sunset"]{--swatch1:#2a2018;--swatch2:#fb923c}
+[data-theme="crystal"]{--swatch1:#ffffff;--swatch2:#6366f1}
+[data-theme="frost"]{--swatch1:#ffffff;--swatch2:#0ea5e9}
+
+.swatch-obsidian{background:linear-gradient(135deg,#1a1d23,#7877ff)}
+.swatch-aurora{background:linear-gradient(135deg,#1a2430,#38bdf8)}
+.swatch-sunset{background:linear-gradient(135deg,#2a2018,#fb923c)}
+.swatch-crystal{background:linear-gradient(135deg,#ffffff,#6366f1)}
+.swatch-frost{background:linear-gradient(135deg,#ffffff,#0ea5e9)}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="logo">
-    <div class="logo-icon">AI</div>
-    <div class="logo-text">XiaoAI × HA Bridge</div>
+<!-- ════ Header ════ -->
+<header class="app-header">
+  <div class="app-logo">
+    <div class="app-logo-mark">AI</div>
+    <span class="app-logo-text">XiaoAI x HA Bridge</span>
   </div>
-  <div class="header-right">
-    <div class="port-badge">:47521</div>
-    <div class="ver-badge" id="ver-badge">v-</div>
+  <div class="app-header-right">
+    <span class="badge">:47521</span>
+    <span class="badge" id="ver-badge">v-</span>
   </div>
 </header>
 
-<div class="layout">
-  <!-- Sidebar -->
-  <nav>
-    <div class="nav-section">
-      <span class="nav-label">Monitor</span>
-      <div class="nav-item active" onclick="showPage('dashboard')" data-page="dashboard">
-        <span class="nav-icon">&#9670;</span> 仪表盘
+<!-- ════ Layout ════ -->
+<div class="app-layout">
+
+  <!-- ════ Sidebar ════ -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <span class="sidebar-label">Monitor</span>
+      <div class="sidebar-item active" onclick="showPage('dashboard')" data-page="dashboard">
+        <span class="sidebar-icon">&#9670;</span>仪表盘
       </div>
-      <div class="nav-item" onclick="showPage('logs')" data-page="logs">
-        <span class="nav-icon">&#9776;</span> 实时日志
+      <div class="sidebar-item" onclick="showPage('logs')" data-page="logs">
+        <span class="sidebar-icon">&#9776;</span>实时日志
       </div>
     </div>
-    <div class="nav-section" style="margin-top:8px">
-      <span class="nav-label">Configuration</span>
-      <div class="nav-item" onclick="showPage('xiaomi')" data-page="xiaomi">
-        <span class="nav-icon">&#9673;</span> 小米账号
+    <div class="sidebar-section">
+      <span class="sidebar-label">Config</span>
+      <div class="sidebar-item" onclick="showPage('xiaomi')" data-page="xiaomi">
+        <span class="sidebar-icon">&#9673;</span>小米账号
       </div>
-      <div class="nav-item" onclick="showPage('ha')" data-page="ha">
-        <span class="nav-icon">&#10545;</span> Home Assistant
+      <div class="sidebar-item" onclick="showPage('ha')" data-page="ha">
+        <span class="sidebar-icon">&#10545;</span>Home Assistant
       </div>
-      <div class="nav-item" onclick="showPage('rules')" data-page="rules">
-        <span class="nav-icon">&#8878;</span> 意图规则
+      <div class="sidebar-item" onclick="showPage('rules')" data-page="rules">
+        <span class="sidebar-icon">&#8878;</span>意图规则
       </div>
-      <div class="nav-item" onclick="showPage('devices')" data-page="devices">
-        <span class="nav-icon">&#9670;</span> 设备管理
+      <div class="sidebar-item" onclick="showPage('devices')" data-page="devices">
+        <span class="sidebar-icon">&#9670;</span>设备管理
       </div>
-      <div class="nav-item" onclick="showPage('schedules')" data-page="schedules">
-        <span class="nav-icon">&#9687;</span> 定时任务
+      <div class="sidebar-item" onclick="showPage('schedules')" data-page="schedules">
+        <span class="sidebar-icon">&#9687;</span>定时任务
       </div>
-      <div class="nav-item" onclick="showPage('advanced')" data-page="advanced">
-        <span class="nav-icon">&#9881;</span> 高级设置
+      <div class="sidebar-item" onclick="showPage('advanced')" data-page="advanced">
+        <span class="sidebar-icon">&#9881;</span>高级设置
       </div>
     </div>
 
-    <div class="status-widget">
-      <div class="status-row">
-        <span class="status-key">Bridge</span>
-        <span class="status-val">
-          <div class="dot" id="dot-bridge"></div>
-          <span id="txt-bridge">离线</span>
-        </span>
-      </div>
-      <div class="status-row">
-        <span class="status-key">HA</span>
-        <span class="status-val">
-          <div class="dot" id="dot-ha"></div>
-          <span id="txt-ha">&mdash;</span>
-        </span>
-      </div>
-      <div class="status-row">
-        <span class="status-key">Commands</span>
-        <span class="status-val"><span id="txt-count">0</span></span>
+    <!-- ── Theme Switcher ── -->
+    <div class="theme-section">
+      <div class="theme-label">Theme</div>
+      <div class="theme-grid">
+        <div class="theme-swatch swatch-obsidian active" onclick="setTheme('obsidian')" title="Obsidian - 暗紫"><span class="check">&#10003;</span></div>
+        <div class="theme-swatch swatch-aurora" onclick="setTheme('aurora')" title="Aurora - 暗蓝"><span class="check">&#10003;</span></div>
+        <div class="theme-swatch swatch-sunset" onclick="setTheme('sunset')" title="Sunset - 暖橙"><span class="check">&#10003;</span></div>
+        <div class="theme-swatch swatch-crystal" onclick="setTheme('crystal')" title="Crystal - 浅紫"><span class="check">&#10003;</span></div>
+        <div class="theme-swatch swatch-frost" onclick="setTheme('frost')" title="Frost - 浅蓝"><span class="check">&#10003;</span></div>
       </div>
     </div>
-  </nav>
 
-  <!-- Main Content -->
-  <main>
+    <!-- ── Status ── -->
+    <div class="status-card">
+      <div class="status-row"><span class="status-key">Bridge</span><span class="status-value"><div class="status-dot" id="dot-bridge"></div><span id="txt-bridge">离线</span></span></div>
+      <div class="status-row"><span class="status-key">HA</span><span class="status-value"><div class="status-dot" id="dot-ha"></div><span id="txt-ha">&mdash;</span></span></div>
+      <div class="status-row"><span class="status-key">Commands</span><span class="status-value"><span id="txt-count">0</span></span></div>
+    </div>
+  </aside>
 
-    <!-- Dashboard -->
+  <!-- ════ Main ════ -->
+  <main class="main-content">
+
+    <!-- ─── Dashboard ─── -->
     <div class="page active" id="page-dashboard">
-      <div class="page-header">
-        <div class="page-title"><span class="page-icon">&#9670;</span> 仪表盘</div>
+      <div class="page-head">
+        <div class="page-title"><span class="icon">&#9670;</span>仪表盘</div>
         <div class="page-desc">桥接器运行状态监控</div>
       </div>
-
-      <div class="ctrl-bar">
-        <button class="btn btn-success" id="btn-start" onclick="startBridge()">&#9654; 启动桥接器</button>
-        <button class="btn btn-danger" id="btn-stop" onclick="stopBridge()" disabled>&#9632; 停止</button>
-        <div class="saving-indicator" id="ctrl-saving">
-          <div class="spinner"></div> 处理中...
-        </div>
+      <div class="btn-group">
+        <button class="btn btn-success" id="btn-start" onclick="startBridge()">&#9654;启动</button>
+        <button class="btn btn-danger" id="btn-stop" onclick="stopBridge()" disabled>&#9632;停止</button>
+        <div class="loading" id="ctrl-loading"><div class="spinner"></div>处理中...</div>
       </div>
-
       <div id="dash-alert" class="alert"></div>
-
-      <div class="dash-grid">
-        <div class="dash-card card-green" id="dc-status">
-          <div class="dash-val" id="dc-status-val">OFF</div>
-          <div class="dash-key">运行状态</div>
-        </div>
-        <div class="dash-card">
-          <div class="dash-val" id="dc-uptime">&mdash;</div>
-          <div class="dash-key">运行时长</div>
-        </div>
-        <div class="dash-card highlight">
-          <div class="dash-val" id="dc-count">0</div>
-          <div class="dash-key">指令执行数</div>
-        </div>
-        <div class="dash-card">
-          <div class="dash-val" id="dc-ha">&mdash;</div>
-          <div class="dash-key">HA 连接</div>
-        </div>
+      <div class="stat-grid">
+        <div class="stat-card positive" id="dc-status"><div class="stat-val" id="dc-status-val">OFF</div><div class="stat-label">运行状态</div></div>
+        <div class="stat-card"><div class="stat-val" id="dc-uptime">&mdash;</div><div class="stat-label">运行时长</div></div>
+        <div class="stat-card highlight"><div class="stat-val" id="dc-count">0</div><div class="stat-label">指令执行</div></div>
+        <div class="stat-card"><div class="stat-val" id="dc-ha">&mdash;</div><div class="stat-label">HA 连接</div></div>
       </div>
-
       <div class="last-cmd" id="last-cmd-box">
-        <span>最近指令：<span class="last-cmd-text" id="last-cmd-text">暂无</span></span>
+        <span>最近：<span class="last-cmd-text" id="last-cmd-text">暂无</span></span>
         <span class="last-cmd-time" id="last-cmd-time"></span>
       </div>
-
       <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#10545;</span> 快速开始</div>
-        </div>
-        <div class="quick-step">
-          <div class="quick-step-num">1</div>
-          <div>在 <b>小米账号</b> 页填入账号密码，点击测试连接，会自动发现音箱设备</div>
-        </div>
-        <div class="quick-step">
-          <div class="quick-step-num">2</div>
-          <div>在 <b>Home Assistant</b> 页填入 HA 地址和长期令牌，点击测试连接</div>
-        </div>
-        <div class="quick-step">
-          <div class="quick-step-num">3</div>
-          <div>在 <b>意图规则</b> 页配置语音 &rarr; 设备映射，也可以用「测试规则」验证正则</div>
-        </div>
-        <div class="quick-step">
-          <div class="quick-step-num">4</div>
-          <div>点击 <b style="color:var(--green)">启动桥接器</b>，对小爱说话即可控制 HA 设备</div>
-        </div>
+        <div class="card-head"><div class="card-title"><span>&#10545;</span>快速开始</div></div>
+        <div class="quick-step"><div class="quick-step-num">1</div><div>在<b>小米账号</b>页填入凭据，测试连接自动发现音箱</div></div>
+        <div class="quick-step"><div class="quick-step-num">2</div><div>在<b>Home Assistant</b>页填入地址和令牌，测试连接</div></div>
+        <div class="quick-step"><div class="quick-step-num">3</div><div>在<b>意图规则</b>页配置语音映射，用测试区验证正则</div></div>
+        <div class="quick-step"><div class="quick-step-num">4</div><div>点击<b style="color:var(--green)">启动</b>，对小爱说话即可控制 HA 设备</div></div>
       </div>
     </div>
 
-    <!-- Logs -->
+    <!-- ─── Logs ─── -->
     <div class="page" id="page-logs">
-      <div class="page-header">
-        <div class="page-title"><span class="page-icon">&#9776;</span> 实时日志</div>
-        <div class="page-desc">运行日志（最近 80 条）</div>
-      </div>
-      <div class="ctrl-bar">
-        <button class="btn" onclick="clearLogs()">&#10005; 清空</button>
-        <button class="btn" onclick="toggleAutoScroll()" id="btn-autoscroll">&#11015; 自动滚动</button>
+      <div class="page-head"><div class="page-title"><span class="icon">&#9776;</span>实时日志</div><div class="page-desc">运行日志（最近80条）</div></div>
+      <div class="btn-group">
+        <button class="btn" onclick="clearLogs()">&#10005;清空</button>
+        <button class="btn" onclick="toggleAutoScroll()" id="btn-autoscroll">&#11015;自动滚动</button>
       </div>
       <div class="log-panel" id="log-panel"></div>
     </div>
 
-    <!-- Xiaomi -->
+    <!-- ─── Xiaomi ─── -->
     <div class="page" id="page-xiaomi">
-      <div class="page-header">
-        <div class="page-title"><span class="page-icon">&#9673;</span> 小米账号</div>
-        <div class="page-desc">小米账号与小爱音箱设置</div>
-      </div>
+      <div class="page-head"><div class="page-title"><span class="icon">&#9673;</span>小米账号</div><div class="page-desc">小米账号与小爱音箱设置</div></div>
       <div id="xiaomi-alert" class="alert"></div>
-
       <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#9673;</span> 账号信息</div>
-        </div>
+        <div class="card-head"><div class="card-title"><span>&#9673;</span>登录信息</div></div>
         <div class="form-grid">
-          <div class="form-field">
-            <label>账号（手机号 / 邮箱）</label>
-            <input type="text" id="mi-username" placeholder="your@email.com">
-          </div>
-          <div class="form-field">
-            <label>密码</label>
-            <div class="input-row">
-              <input type="password" id="mi-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;">
-              <button class="btn" onclick="testXiaomi()">&#9889; 测试</button>
-              <button class="btn btn-primary" onclick="qrLogin()">&#128241; 扫码登录</button>
-            </div>
-          </div>
+          <div class="field"><label>账号（手机号/邮箱）</label><input type="text" id="mi-username" placeholder="your@email.com"></div>
+          <div class="field"><label>密码</label><div class="input-row"><input type="password" id="mi-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"><button class="btn" onclick="testXiaomi()">&#9889;测试</button><button class="btn btn-primary" onclick="qrLogin()">&#128247;扫码</button></div></div>
         </div>
       </div>
-
       <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#9673;</span> Cookie 登录 <span style="color:var(--green);text-transform:none;font-size:10px">免短信验证</span></div>
+        <div class="card-head"><div class="card-title"><span>&#9673;</span>Cookie登录 <span style="color:var(--green);text-transform:none;font-weight:400;font-size:10px;letter-spacing:0">免短信</span></div></div>
+        <div style="font-size:12px;color:var(--txt-muted);line-height:1.8;margin-bottom:10px">
+          浏览器已登录小米时直接复制 Cookie 跳过短信。<br>
+          ① 打开 <a href="https://account.xiaomi.com" target="_blank" style="color:var(--accent)">account.xiaomi.com</a><br>
+          ② <b style="color:var(--txt-secondary)">F12</b> &rarr; <b style="color:var(--txt-secondary)">Application</b> &rarr; <b style="color:var(--txt-secondary)">Cookies</b><br>
+          ③ 复制所有 Cookie（含 userId / passToken / serviceToken）<br>
+          ④ 粘贴下方 &rarr; 点「测试」
         </div>
-        <div style="font-size:12px;color:var(--text-tertiary);line-height:1.8;margin-bottom:12px">
-          如果浏览器已登录小米账号，直接复制 Cookie 即可跳过短信验证。<br>
-          ① 打开 <a href="https://account.xiaomi.com" target="_blank" style="color:var(--accent)">account.xiaomi.com</a>（确认已登录）<br>
-          ② 按 <b style="color:var(--text-secondary)">F12</b> &rarr; <b style="color:var(--text-secondary)">Application</b> &rarr; <b style="color:var(--text-secondary)">Cookies</b> &rarr; account.xiaomi.com<br>
-          ③ 复制所有 Cookie（含 <code style="color:var(--text-primary)">userId</code>、<code style="color:var(--text-primary)">passToken</code>、<code style="color:var(--text-primary)">serviceToken</code>）<br>
-          ④ 粘贴到下方 &rarr; 点击「测试」
-        </div>
-        <div class="form-field">
-          <label>浏览器 Cookie</label>
-          <textarea id="mi-cookie-text" rows="3" placeholder="userId=xxx; passToken=xxx; serviceToken=xxx; ..."></textarea>
-        </div>
+        <div class="field"><label>Cookie 文本</label><textarea id="mi-cookie-text" rows="2" placeholder="userId=xxx; passToken=xxx; serviceToken=xxx; ..."></textarea></div>
       </div>
-
-      <div id="mi-sts-card" class="card" style="display:none">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#128241;</span> 短信验证</div>
-        </div>
-        <div style="font-size:12px;color:var(--text-tertiary);line-height:1.8;margin-bottom:10px">
-          ① 点击上方链接完成短信验证<br>
-          ② 验证成功后浏览器会跳转到新页面<br>
-          ③ 在该页面复制所有 Cookie 粘贴到上方「Cookie 登录」输入框 &rarr; 点「测试」
-        </div>
-        <div style="font-size:11px;color:var(--orange)">提示：短信验证后 serviceToken 已刷新，此时复制 Cookie 即可永久免短信</div>
-      </div>
-
-      <div id="mi-device-list" class="card" style="display:none">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#9670;</span> 已发现设备 <span id="mi-device-count" style="color:var(--text-quaternary);font-weight:400;text-transform:none;font-size:10px"></span></div>
-        </div>
-        <div id="mi-devices"></div>
-      </div>
-
-      <div class="card" id="qr-area" style="display:none">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#128241;</span> 扫码登录</div>
-        </div>
-        <div style="text-align:center;padding:12px">
-          <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:10px" id="qr-msg">请用米家 App 扫描二维码</div>
-          <img id="qr-img" src="" style="width:180px;height:180px;border:2px solid var(--border-default);border-radius:var(--r-lg);background:#fff" alt="QR Code">
-          <div style="margin-top:8px;font-size:11px;color:var(--text-quaternary)" id="qr-status"></div>
-        </div>
-      </div>
-
+      <div id="mi-sts-card" class="card" style="display:none"><div class="card-head"><div class="card-title"><span>&#128241;</span>短信验证</div></div><div style="font-size:12px;color:var(--txt-muted);line-height:1.8">① 点击上方链接验证<br>② 成功后复制 Cookie 到上方输入框 &rarr; 测试</div></div>
+      <div id="mi-device-list" class="card" style="display:none"><div class="card-head"><div class="card-title"><span>&#9670;</span>发现设备 <span id="mi-device-count" style="text-transform:none;font-weight:400;font-size:10px"></span></div></div><div id="mi-devices"></div></div>
+      <div class="card" id="qr-area" style="display:none"><div class="card-head"><div class="card-title"><span>&#128247;</span>扫码登录</div></div><div class="qr-box"><div style="font-size:12px;color:var(--txt-muted);margin-bottom:8px" id="qr-msg">用米家App扫码</div><img id="qr-img" src="" style="width:170px;height:170px;border:2px solid var(--border-default);border-radius:var(--r-lg);background:#fff" alt="QR"><div style="margin-top:6px;font-size:11px;color:var(--txt-dim)" id="qr-status"></div></div></div>
       <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#9881;</span> 设备配置</div>
-        </div>
+        <div class="card-head"><div class="card-title"><span>&#9881;</span>设备参数</div></div>
         <div class="form-grid">
-          <div class="form-field">
-            <label>音箱型号 (hardware)</label>
-            <input type="text" id="mi-hardware" placeholder="测试连接自动填充">
-          </div>
-          <div class="form-field">
-            <label>设备 DID（留空自动）</label>
-            <input type="text" id="mi-did" placeholder="点击设备自动填入">
-          </div>
-          <div class="form-field full">
-            <div class="toggle-wrap">
-              <label class="toggle">
-                <input type="checkbox" id="mi-tts" checked>
-                <div class="toggle-track"></div>
-                <div class="toggle-thumb"></div>
-              </label>
-              <span class="toggle-label">操作后小爱语音播报结果（TTS 回复）</span>
-            </div>
-          </div>
+          <div class="field"><label>音箱型号</label><input type="text" id="mi-hardware" placeholder="测试连接自动填充"></div>
+          <div class="field"><label>设备 DID</label><input type="text" id="mi-did" placeholder="点击设备自动填入"></div>
+          <div class="field full"><div class="toggle-wrap"><label class="toggle"><input type="checkbox" id="mi-tts" checked><div class="toggle-track"></div><div class="toggle-thumb"></div></label><span class="toggle-label">TTS语音反馈</span></div></div>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="saveXiaomi()">&darr; 保存小米配置</button>
+      <button class="btn btn-primary" onclick="saveXiaomi()">&darr;保存</button>
     </div>
 
-    <!-- Home Assistant -->
+    <!-- ─── Home Assistant ─── -->
     <div class="page" id="page-ha">
-      <div class="page-header">
-        <div class="page-title"><span class="page-icon">&#10545;</span> Home Assistant</div>
-        <div class="page-desc">连接 HA 实例并获取访问权限</div>
-      </div>
+      <div class="page-head"><div class="page-title"><span class="icon">&#10545;</span>Home Assistant</div><div class="page-desc">连接 HA 实例</div></div>
       <div id="ha-alert" class="alert"></div>
-
       <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#10545;</span> 连接设置</div>
-        </div>
+        <div class="card-head"><div class="card-title"><span>&#10545;</span>连接设置</div></div>
         <div class="form-grid">
-          <div class="form-field full">
-            <label>HA 地址（含端口）</label>
-            <input type="text" id="ha-url" placeholder="http://homeassistant.local:8123">
-          </div>
-          <div class="form-field full">
-            <label>长期访问令牌 (Long-Lived Access Token)</label>
-            <div class="input-row">
-              <input type="password" id="ha-token" placeholder="eyJ...">
-              <button class="btn" onclick="testHA()">&#9889; 测试连接</button>
-            </div>
-          </div>
+          <div class="field full"><label>HA 地址</label><input type="text" id="ha-url" placeholder="http://homeassistant.local:8123"></div>
+          <div class="field full"><label>Long-Lived Token</label><div class="input-row"><input type="password" id="ha-token" placeholder="eyJ..."><button class="btn" onclick="testHA()">&#9889;测试</button></div></div>
         </div>
-        <div style="margin-top:14px;padding:12px;background:rgba(0,0,0,0.2);border-radius:var(--r-md);font-size:12px;color:var(--text-tertiary);line-height:1.8">
-          <b style="color:var(--text-secondary)">如何获取令牌：</b>
-          打开 Home Assistant &rarr; 点击左下角头像 &rarr; 个人资料 &rarr;
-          滚动到底部「长期访问令牌」&rarr; 创建令牌 &rarr; 复制粘贴到此处
-        </div>
+        <div style="margin-top:12px;padding:10px;background:var(--page-bg);border-radius:var(--r-md);font-size:12px;color:var(--txt-muted);line-height:1.8">HA &rarr; 左下角头像 &rarr; 个人资料 &rarr; 长期访问令牌 &rarr; 创建</div>
       </div>
-      <button class="btn btn-primary" onclick="saveHA()">&darr; 保存 HA 配置</button>
+      <button class="btn btn-primary" onclick="saveHA()">&darr;保存</button>
     </div>
 
-    <!-- Rules -->
+    <!-- ─── Rules ─── -->
     <div class="page" id="page-rules">
-      <div class="page-header">
-        <div class="page-title"><span class="page-icon">&#8878;</span> 意图规则</div>
-        <div class="page-desc">将语音文本映射到 Home Assistant 服务调用</div>
-      </div>
+      <div class="page-head"><div class="page-title"><span class="icon">&#8878;</span>意图规则</div><div class="page-desc">语音 &rarr; HA 服务映射</div></div>
       <div id="rules-alert" class="alert"></div>
-
       <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#9889;</span> 规则测试</div>
-        </div>
-        <div class="test-input-row">
-          <input type="text" id="test-input" placeholder="输入语音文本，如「打开客厅灯」" onkeydown="if(event.key==='Enter')testRule()">
-          <button class="btn btn-primary" onclick="testRule()">测试</button>
-        </div>
-        <div class="test-result" id="test-result">点击「测试」查看匹配结果...</div>
+        <div class="card-head"><div class="card-title"><span>&#9889;</span>测试区</div></div>
+        <div class="test-row"><input type="text" id="test-input" placeholder="如「打开客厅灯」" onkeydown="if(event.key==='Enter')testRule()"><button class="btn btn-primary" onclick="testRule()">测试</button></div>
+        <div class="test-result" id="test-result">点击测试查看匹配</div>
       </div>
-
-      <div class="ctrl-bar">
-        <button class="btn btn-primary" onclick="addRule()">+ 新增规则</button>
-        <button class="btn btn-primary" onclick="saveRules()">&darr; 保存</button>
-        <button class="btn" onclick="exportRules()">&#128228; 导出</button>
-        <button class="btn" onclick="importRules()">&#128229; 导入</button>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="addRule()">+新增</button>
+        <button class="btn btn-primary" onclick="saveRules()">&darr;保存</button>
+        <button class="btn" onclick="exportRules()">&#128228;导出</button>
+        <button class="btn" onclick="importRules()">&#128229;导入</button>
       </div>
       <div class="rule-list" id="rule-list"></div>
     </div>
 
-    <!-- Devices -->
+    <!-- ─── Devices ─── -->
     <div class="page" id="page-devices">
-      <div class="page-header">
-        <div class="page-title"><span class="page-icon">&#9670;</span> 设备管理</div>
-        <div class="page-desc">查看 HA 设备并设置别名</div>
-      </div>
+      <div class="page-head"><div class="page-title"><span class="icon">&#9670;</span>设备管理</div><div class="page-desc">HA 设备别名设置</div></div>
       <div id="devices-alert" class="alert"></div>
-      <div class="ctrl-bar">
-        <button class="btn btn-primary" onclick="loadDevices()">&#128260; 刷新设备列表</button>
-        <span style="color:var(--text-tertiary);font-size:12px;margin-left:12px" id="device-count"></span>
-      </div>
+      <div class="btn-group"><button class="btn btn-primary" onclick="loadDevices()">&#128260;刷新</button><span style="color:var(--txt-muted);font-size:12px;margin-left:8px" id="device-count"></span></div>
       <div class="rule-list" id="device-list"></div>
     </div>
 
-    <!-- Schedules -->
+    <!-- ─── Schedules ─── -->
     <div class="page" id="page-schedules">
-      <div class="page-header">
-        <div class="page-title"><span class="page-icon">&#9687;</span> 定时任务</div>
-        <div class="page-desc">小爱语音创建的定时自动化任务</div>
-      </div>
+      <div class="page-head"><div class="page-title"><span class="icon">&#9687;</span>定时任务</div><div class="page-desc">自动化定时器</div></div>
       <div id="schedules-alert" class="alert"></div>
-      <div class="ctrl-bar">
-        <button class="btn btn-primary" onclick="loadSchedules()">&#128260; 刷新</button>
-        <span style="color:var(--text-tertiary);font-size:12px;margin-left:12px" id="schedule-count"></span>
-      </div>
+      <div class="btn-group"><button class="btn btn-primary" onclick="loadSchedules()">&#128260;刷新</button><span style="color:var(--txt-muted);font-size:12px;margin-left:8px" id="schedule-count"></span></div>
       <div class="rule-list" id="schedule-list"></div>
     </div>
 
-    <!-- Advanced -->
+    <!-- ─── Advanced ─── -->
     <div class="page" id="page-advanced">
-      <div class="page-header">
-        <div class="page-title"><span class="page-icon">&#9881;</span> 高级设置</div>
-        <div class="page-desc">轮询间隔、AI 托管与调试选项</div>
-      </div>
+      <div class="page-head"><div class="page-title"><span class="icon">&#9881;</span>高级设置</div><div class="page-desc">轮询、AI 托管</div></div>
       <div id="adv-alert" class="alert"></div>
-
       <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#9881;</span> 轮询设置</div>
-        </div>
-        <div class="form-grid">
-          <div class="form-field">
-            <label>轮询间隔（秒）</label>
-            <input type="number" id="adv-interval" min="1" max="60" value="2" step="1">
-          </div>
-        </div>
-        <div style="margin-top:10px;font-size:12px;color:var(--text-tertiary)">
-          建议 2&ndash;5 秒。间隔太短可能触发小米限速，太长会有延迟感。
-        </div>
+        <div class="card-head"><div class="card-title"><span>&#9881;</span>轮询</div></div>
+        <div class="form-grid"><div class="field"><label>间隔（秒）</label><input type="number" id="adv-interval" min="1" max="60" value="2" step="1"></div></div>
+        <div style="margin-top:8px;font-size:12px;color:var(--txt-muted)">建议2&ndash;5秒</div>
       </div>
-
-      <div class="card" style="margin-top:16px">
-        <div class="card-header">
-          <div class="card-title"><span class="card-icon">&#129302;</span> AI 托管模式</div>
-        </div>
-        <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:12px">
-          开启后，正则未匹配的语音指令将交给 AI 自动解析。设备列表自动从 HA 获取。
-        </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span>&#129302;</span>AI托管</div></div>
+        <div style="font-size:12px;color:var(--txt-muted);margin-bottom:10px">开启后未匹配指令由 AI 解析</div>
         <div class="form-grid">
-          <div class="form-field">
-            <label>AI 托管开关</label>
-            <label class="switch-label">
-              <input type="checkbox" id="adv-ai-mode" onchange="toggleAISettings()">
-              <span class="switch-slider"></span>
-              <span id="ai-mode-text" style="font-size:12px;font-weight:400">关闭</span>
-            </label>
-          </div>
+          <div class="field"><label>开关</label><label class="switch-label"><input type="checkbox" id="adv-ai-mode" onchange="toggleAISettings()"><span class="switch-track"></span><span id="ai-mode-text" style="font-size:12px;font-weight:400">关闭</span></label></div>
           <div id="ai-settings" style="display:none;grid-column:1/-1">
-            <div class="form-field">
-              <label>API 提供商</label>
-              <select id="adv-ai-provider" onchange="onProviderChange()">
-                <option value="https://api.openai.com">OpenAI</option>
-                <option value="https://api.deepseek.com">DeepSeek</option>
-                <option value="https://api.siliconflow.cn">硅基流动 (SiliconFlow)</option>
-                <option value="custom">自定义</option>
-              </select>
-            </div>
-            <div class="form-field" id="ai-base-field">
-              <label>API Base URL</label>
-              <input type="text" id="adv-ai-base" value="https://api.openai.com" placeholder="https://api.openai.com">
-            </div>
-            <div class="form-field">
-              <label>API Key</label>
-              <input type="password" id="adv-ai-key" placeholder="sk-...">
-            </div>
-            <div class="form-field">
-              <label>模型</label>
-              <input type="text" id="adv-ai-model" value="gpt-4o-mini" placeholder="gpt-4o-mini">
-            </div>
+            <div class="field"><label>提供商</label><select id="adv-ai-provider" onchange="onProviderChange()"><option value="https://api.openai.com">OpenAI</option><option value="https://api.deepseek.com">DeepSeek</option><option value="https://api.siliconflow.cn">硅基流动</option><option value="custom">自定义</option></select></div>
+            <div class="field" id="ai-base-field"><label>Base URL</label><input type="text" id="adv-ai-base" value="https://api.openai.com"></div>
+            <div class="field"><label>API Key</label><input type="password" id="adv-ai-key" placeholder="sk-..."></div>
+            <div class="field"><label>模型</label><input type="text" id="adv-ai-model" value="gpt-4o-mini"></div>
           </div>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="saveAdvanced()">&darr; 保存</button>
+      <button class="btn btn-primary" onclick="saveAdvanced()">&darr;保存</button>
     </div>
 
   </main>
 </div>
 
 <script>
-// ── State ──
+// ═══════════ State ═══════════
 let cfg = {};
 let autoScroll = true;
-let logTimer = null;
-let statusTimer = null;
-let qrPollTimer = null;
+let logTimer = null, statusTimer = null, qrPollTimer = null;
 let deviceAliases = {};
 
-// ── Init ──
+// ═══════════ Theme ═══════════
+const THEMES = ['obsidian','aurora','sunset','crystal','frost'];
+
+function setTheme(name) {
+  document.documentElement.dataset.theme = name;
+  localStorage.setItem('xiaoai-theme', name);
+  document.querySelectorAll('.theme-swatch').forEach(s => {
+    s.classList.toggle('active', s.classList.contains('swatch-'+name));
+  });
+}
+
+function loadTheme() {
+  const saved = localStorage.getItem('xiaoai-theme') || 'obsidian';
+  setTheme(saved);
+}
+
+// ═══════════ Init ═══════════
 async function init() {
+  loadTheme();
   await loadConfig();
   renderRules();
   startPolling();
@@ -1012,570 +838,121 @@ async function init() {
 }
 
 async function fetchVersion() {
-  try {
-    const r = await fetch('/api/version');
-    const d = await r.json();
-    document.getElementById('ver-badge').textContent = 'v' + d.version;
-  } catch(e) {}
+  try{const r=await fetch('/api/version');const d=await r.json();document.getElementById('ver-badge').textContent='v'+d.version}catch(e){}
 }
 
 async function loadConfig() {
-  const r = await fetch('/api/config');
-  cfg = await r.json();
-  applyConfigToUI();
+  try{const r=await fetch('/api/config');cfg=await r.json();applyConfigToUI()}catch(e){}
 }
 
 function applyConfigToUI() {
-  const mi = cfg.xiaomi || {};
-  const ha = cfg.homeassistant || {};
-  safeSet('mi-username', mi.username || '');
-  safeSet('mi-password', mi.password || '');
-  safeSet('mi-did', mi.device_did || '');
-  safeCheck('mi-tts', mi.tts_reply !== false);
-  safeSet('mi-hardware', mi.hardware || '');
-  safeSet('ha-url', ha.url || '');
-  safeSet('ha-token', ha.token || '');
-  safeSet('adv-interval', cfg.poll_interval_seconds || 2);
-  const oai = cfg.openai || {};
-  safeSet('adv-ai-key', oai.api_key || '');
-  safeSet('adv-ai-model', oai.model || 'gpt-4o-mini');
-  const base = oai.api_base || 'https://api.openai.com';
-  safeSet('adv-ai-base', base);
-  const sel = document.getElementById('adv-ai-provider');
-  const known = {'https://api.openai.com':0,'https://api.deepseek.com':1,'https://api.siliconflow.cn':2};
-  sel.selectedIndex = known[base] !== undefined ? known[base] : 3;
-  if (sel.selectedIndex >= 3) document.getElementById('adv-ai-base').value = base;
-  safeCheck('adv-ai-mode', cfg.ai_mode || false);
-  toggleAISettings();
-  onProviderChange();
+  const mi=cfg.xiaomi||{};const ha=cfg.homeassistant||{};
+  safeSet('mi-username',mi.username||'');safeSet('mi-password',mi.password||'');
+  safeSet('mi-did',mi.device_did||'');safeCheck('mi-tts',mi.tts_reply!==false);
+  safeSet('mi-hardware',mi.hardware||'');safeSet('ha-url',ha.url||'');safeSet('ha-token',ha.token||'');
+  safeSet('adv-interval',cfg.poll_interval_seconds||2);
+  const oai=cfg.openai||{};safeSet('adv-ai-key',oai.api_key||'');safeSet('adv-ai-model',oai.model||'gpt-4o-mini');
+  const base=oai.api_base||'https://api.openai.com';safeSet('adv-ai-base',base);
+  const sel=document.getElementById('adv-ai-provider');const known={'https://api.openai.com':0,'https://api.deepseek.com':1,'https://api.siliconflow.cn':2};
+  sel.selectedIndex=known[base]!==undefined?known[base]:3;
+  if(sel.selectedIndex>=3)document.getElementById('adv-ai-base').value=base;
+  safeCheck('adv-ai-mode',cfg.ai_mode||false);toggleAISettings();onProviderChange();
 }
 
-function toggleAISettings() {
-  const on = document.getElementById('adv-ai-mode').checked;
-  document.getElementById('ai-settings').style.display = on ? '' : 'none';
-  document.getElementById('ai-mode-text').textContent = on ? '已开启' : '关闭';
+function toggleAISettings(){const on=document.getElementById('adv-ai-mode').checked;document.getElementById('ai-settings').style.display=on?'':'none';document.getElementById('ai-mode-text').textContent=on?'已开启':'关闭'}
+function onProviderChange(){const sel=document.getElementById('adv-ai-provider');const bf=document.getElementById('ai-base-field');const bi=document.getElementById('adv-ai-base');const mi=document.getElementById('adv-ai-model');const def={'https://api.openai.com':'gpt-4o-mini','https://api.deepseek.com':'deepseek-chat','https://api.siliconflow.cn':'deepseek-ai/DeepSeek-V3'};if(sel.value==='custom'){bf.style.display=''}else{bf.style.display='none';bi.value=sel.value;if(def[sel.value])mi.value=def[sel.value]}}
+function safeSet(id,v){const el=document.getElementById(id);if(el)el.value=v}
+function safeCheck(id,v){const el=document.getElementById(id);if(el)el.checked=v}
+function gv(id){return document.getElementById(id)?.value?.trim()||''}
+
+// ═══════════ Navigation ═══════════
+function showPage(name){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(n=>n.classList.remove('active'));
+  const pg=document.getElementById('page-'+name);if(pg)pg.classList.add('active');
+  const nav=document.querySelector('[data-page="'+name+'"]');if(nav)nav.classList.add('active');
+  if(name==='logs')fetchLogs();if(name==='devices')loadDevices();if(name==='schedules')loadSchedules();
 }
 
-function onProviderChange() {
-  const sel = document.getElementById('adv-ai-provider');
-  const baseField = document.getElementById('ai-base-field');
-  const baseInput = document.getElementById('adv-ai-base');
-  const modelInput = document.getElementById('adv-ai-model');
-  const defaults = {
-    'https://api.openai.com':'gpt-4o-mini',
-    'https://api.deepseek.com':'deepseek-chat',
-    'https://api.siliconflow.cn':'deepseek-ai/DeepSeek-V3',
-  };
-  if (sel.value === 'custom') {
-    baseField.style.display = '';
-  } else {
-    baseField.style.display = 'none';
-    baseInput.value = sel.value;
-    if (defaults[sel.value]) modelInput.value = defaults[sel.value];
-  }
+// ═══════════ Status ═══════════
+function startPolling(){fetchStatus();statusTimer=setInterval(fetchStatus,2000);logTimer=setInterval(()=>{if(document.getElementById('page-logs').classList.contains('active'))fetchLogs()},2500)}
+async function fetchStatus(){try{const r=await fetch('/api/status');const s=await r.json();updateStatusUI(s)}catch{}}
+function updateStatusUI(s){
+  const r=s.running,h=s.connected;
+  setDot('dot-bridge',r?'ok':'');document.getElementById('txt-bridge').textContent=r?'运行中':'离线';
+  setDot('dot-ha',h?'ok':(r?'err':''));document.getElementById('txt-ha').textContent=h?'已连接':'—';
+  document.getElementById('txt-count').textContent=s.command_count||0;
+  document.getElementById('dc-count').textContent=s.command_count||0;
+  document.getElementById('dc-ha').textContent=h?'✓ OK':'✗ —';
+  const sc=document.getElementById('dc-status');
+  document.getElementById('dc-status-val').textContent=r?'ON':'OFF';
+  sc.style.borderColor=r?'var(--green-border)':'var(--border-default)';
+  sc.style.background=r?'var(--green-bg)':'';
+  document.getElementById('dc-uptime').textContent=s.uptime!=null?fmt(s.uptime):'—';
+  if(s.last_command){document.getElementById('last-cmd-text').textContent='「'+s.last_command+'」';document.getElementById('last-cmd-time').textContent=s.last_command_time||''}
+  const a=document.getElementById('dash-alert');
+  if(s.error){showAlert(a,'err','✗ '+s.error)}else{a.classList.remove('show')}
+  document.getElementById('btn-start').disabled=r;
+  document.getElementById('btn-stop').disabled=!r;
 }
+function setDot(id,c){const d=document.getElementById(id);d.className='status-dot '+c}
+function fmt(s){if(s<60)return s+'s';if(s<3600)return Math.floor(s/60)+'m '+(s%60)+'s';return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m'}
 
-function safeSet(id, val) {
-  const el = document.getElementById(id);
-  if (el) el.value = val;
-}
-function safeCheck(id, val) {
-  const el = document.getElementById(id);
-  if (el) el.checked = val;
-}
-function gv(id) { return document.getElementById(id)?.value?.trim() || ''; }
+// ═══════════ Bridge Control ═══════════
+async function startBridge(){showLoad(true);await fetch('/api/bridge/start',{method:'POST'});setTimeout(()=>{fetchStatus();showLoad(false)},800)}
+async function stopBridge(){showLoad(true);await fetch('/api/bridge/stop',{method:'POST'});setTimeout(()=>{fetchStatus();showLoad(false)},500)}
+function showLoad(on){document.getElementById('ctrl-loading').classList.toggle('show',on)}
 
-// ── Navigation ──
-function showPage(name) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('page-' + name)?.classList.add('active');
-  document.querySelector('[data-page="'+name+'"]')?.classList.add('active');
-  if (name === 'logs') fetchLogs();
-  if (name === 'devices') loadDevices();
-  if (name === 'schedules') loadSchedules();
-}
+// ═══════════ Save ═══════════
+async function saveXiaomi(){const o=cfg.xiaomi||{};cfg.xiaomi={username:gv('mi-username'),password:gv('mi-password'),hardware:gv('mi-hardware'),device_did:gv('mi-did'),tts_reply:document.getElementById('mi-tts').checked,cookie_text:o.cookie_text||''};await saveCfg('xiaomi')}
+async function saveHA(){cfg.homeassistant={url:gv('ha-url'),token:gv('ha-token')};await saveCfg('ha')}
+async function saveAdvanced(){cfg.poll_interval_seconds=parseInt(gv('adv-interval'))||2;cfg.ai_mode=document.getElementById('adv-ai-mode').checked;cfg.openai={api_base:gv('adv-ai-base')||'https://api.openai.com',api_key:gv('adv-ai-key'),model:gv('adv-ai-model')||'gpt-4o-mini'};await saveCfg('adv')}
+async function saveRules(){collectRulesFromUI();await saveCfg('rules')}
+async function saveCfg(sec){const map={xiaomi:'xiaomi-alert',ha:'ha-alert',rules:'rules-alert',adv:'adv-alert'};const a=document.getElementById(map[sec]||'dash-alert');try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:cfg})});const d=await r.json();showAlert(a,d.ok?'ok':'err',(d.ok?'✓ ':'✗ ')+(d.ok?'保存成功':'保存失败'))}catch(e){showAlert(a,'err','✗ '+e.message)}setTimeout(()=>a.classList.remove('show'),3000)}
 
-// ── Status Polling ──
-function startPolling() {
-  fetchStatus();
-  statusTimer = setInterval(fetchStatus, 2000);
-  logTimer = setInterval(() => {
-    if (document.getElementById('page-logs').classList.contains('active')) fetchLogs();
-  }, 2500);
-}
+// ═══════════ Xiaomi ═══════════
+async function testXiaomi(){const a=document.getElementById('xiaomi-alert');if(!gv('mi-username')&&!(cfg.xiaomi||{}).username){showAlert(a,'err','✗ 先填写账号');return}showAlert(a,'warn','⟳ 登录中...');try{const ct=document.getElementById('mi-cookie-text')?.value?.trim()||'';const r=await fetch('/api/test/xiaomi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:gv('mi-username'),password:gv('mi-password'),use_saved:true,cookie_text:ct})});const d=await r.json();if(d.need_verify){a.className='alert alert-warn show';a.innerHTML='⚠ '+escHtml(d.msg)+'<br><a href="'+escAttr(d.verify_url)+'" target="_blank" style="color:var(--accent);font-weight:600;font-size:13px">📱 验证页面</a>';document.getElementById('mi-sts-card').style.display=''}else{showAlert(a,d.ok?'ok':'err',(d.ok?'✓ ':'✗ ')+d.msg);document.getElementById('mi-sts-card').style.display='none'}if(d.ok&&d.devices&&d.devices.length>0)renderDeviceList(d.devices)}catch(e){showAlert(a,'err','✗ '+e.message)}}
+async function qrLogin(){const a=document.getElementById('xiaomi-alert');showAlert(a,'warn','⟳ 生成二维码...');try{const r=await fetch('/api/qr/login',{method:'POST'});const d=await r.json();if(d.ok&&d.qr_url){document.getElementById('qr-img').src=d.qr_url;document.getElementById('qr-area').style.display='';document.getElementById('qr-msg').textContent='用米家 App 扫码';document.getElementById('qr-status').textContent='等待扫码...';showAlert(a,'warn','📱 扫码');if(qrPollTimer)clearInterval(qrPollTimer);qrPollTimer=setInterval(pollQrLogin,3000)}else{showAlert(a,'err','✗ '+(d.msg||'失败'))}}catch(e){showAlert(a,'err','✗ '+e.message)}}
+async function pollQrLogin(){try{const r=await fetch('/api/qr/poll');const d=await r.json();if(d.done){clearInterval(qrPollTimer);document.getElementById('qr-status').textContent=d.msg;document.getElementById('qr-area').style.display='none';const a=document.getElementById('xiaomi-alert');showAlert(a,'ok','✓ '+d.msg);const r2=await fetch('/api/test/xiaomi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:gv('mi-username'),password:gv('mi-password'),use_saved:true})});const d2=await r2.json();if(d2.ok&&d2.devices&&d2.devices.length>0)renderDeviceList(d2.devices)}else if(!d.ok){document.getElementById('qr-status').textContent=d.msg||'错误'}}catch(e){}}
 
-async function fetchStatus() {
-  try {
-    const r = await fetch('/api/status');
-    const s = await r.json();
-    updateStatusUI(s);
-  } catch {}
-}
+// ═══════════ Devices ═══════════
+async function loadDevices(){const a=document.getElementById('devices-alert');try{const[dr,ar]=await Promise.all([fetch('/api/devices'),fetch('/api/aliases')]);const dd=await dr.json();const ad=await ar.json();deviceAliases=ad.aliases||{};if(!dd.ok){showAlert(a,'err',dd.msg);return}document.getElementById('device-count').textContent=dd.count+'个';const list=document.getElementById('device-list');const dn={light:'💡灯光',switch:'🔌开关',climate:'🌡️空调',scene:'🎬场景',media_player:'📺媒体',script:'⚡脚本',automation:'🤖自动化',input_boolean:'🔘虚拟',fan:'🌀风扇',cover:'🪟窗帘',lock:'🔒门锁',vacuum:'🧹扫地'};list.innerHTML=dd.devices.map(d=>{const al=deviceAliases[d.entity_id]||'';return'<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">'+escHtml(d.name)+'</div><div class="device-meta">'+escHtml(d.entity_id)+' <span class="domain-tag">['+(dn[d.domain]||d.domain)+']</span></div></div><input class="alias-in" value="'+escHtml(al)+'" placeholder="别名" onchange="saveAlias(\''+escAttr(d.entity_id)+'\',this.value)"></div></div>'}).join('')}catch(e){showAlert(a,'err','加载失败: '+e.message)}}
+async function saveAlias(eid,alias){await fetch('/api/aliases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entity_id:eid,alias:alias.trim()})});deviceAliases[eid]=alias.trim()}
 
-function updateStatusUI(s) {
-  const running = s.running;
-  const haOk = s.connected;
-  setDot('dot-bridge', running ? 'on-green' : '');
-  document.getElementById('txt-bridge').textContent = running ? '运行中' : '离线';
-  setDot('dot-ha', haOk ? 'on-green' : (running ? 'on-red' : ''));
-  document.getElementById('txt-ha').textContent = haOk ? '已连接' : '\u2014';
-  document.getElementById('txt-count').textContent = s.command_count || 0;
-  document.getElementById('dc-count').textContent = s.command_count || 0;
-  document.getElementById('dc-ha').textContent = haOk ? '\u2713 OK' : '\u2717 \u2014';
-  const sc = document.getElementById('dc-status');
-  document.getElementById('dc-status-val').textContent = running ? 'ON' : 'OFF';
-  sc.style.borderColor = running ? 'var(--green)' : 'var(--border-default)';
-  sc.style.background = running ? 'var(--green-bg)' : '';
-  document.getElementById('dc-uptime').textContent = s.uptime != null ? fmtUptime(s.uptime) : '\u2014';
-  if (s.last_command) {
-    document.getElementById('last-cmd-text').textContent = '\u300C' + s.last_command + '\u300D';
-    document.getElementById('last-cmd-time').textContent = s.last_command_time || '';
-  }
-  const a = document.getElementById('dash-alert');
-  if (s.error) {
-    showAlert(a, 'err', '\u2717 ' + s.error);
-  } else {
-    a.classList.remove('show');
-  }
-  document.getElementById('btn-start').disabled = running;
-  document.getElementById('btn-stop').disabled = !running;
-}
+// ═══════════ Schedules ═══════════
+async function loadSchedules(){const a=document.getElementById('schedules-alert');try{const r=await fetch('/api/automations');const d=await r.json();if(!d.ok){showAlert(a,'err',d.msg);return}document.getElementById('schedule-count').textContent=d.count+'个';const list=document.getElementById('schedule-list');if(!d.automations.length){list.innerHTML='<div class="empty-state">暂无<br><span style="font-size:11px">对小爱说「每天七点半打开热水器」</span></div>';return}list.innerHTML=d.automations.map(s=>{const name=escHtml(s.alias||s.entity_id);const eid=escHtml(s.entity_id);const id=s.entity_id.replace('automation.','');const st=s.state==='on';const last=s.last_triggered?new Date(s.last_triggered).toLocaleString('zh-CN'):'从未';return'<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">'+name+'</div><div class="device-meta">'+eid+'</div><div style="font-size:10px;color:var(--txt-dim);margin-top:2px">上次: '+last+'</div></div><div style="display:flex;align-items:center;gap:10px"><span class="schedule-state '+(st?'on':'off')+'">'+(st?'启用':'禁用')+'</span><button class="rule-del" onclick="deleteSchedule(\''+escAttr(id)+'\')">✕</button></div></div></div>'}).join('')}catch(e){showAlert(a,'err','加载失败: '+e.message)}}
+async function deleteSchedule(id){if(!confirm('确定删除？'))return;const a=document.getElementById('schedules-alert');try{const r=await fetch('/api/automations/'+encodeURIComponent(id),{method:'DELETE'});const d=await r.json();if(d.ok){showAlert(a,'ok','已删除');loadSchedules()}else showAlert(a,'err',d.detail||'失败')}catch(e){showAlert(a,'err','失败: '+e.message)}}
+function renderDeviceList(devices){const box=document.getElementById('mi-device-list');const c=document.getElementById('mi-devices');const ce=document.getElementById('mi-device-count');box.style.display='';ce.textContent='('+devices.length+'台)';c.innerHTML=devices.map(d=>{const n=escHtml(d.name||'未知');const h=escHtml(d.hardware||d.model||'');const did=escHtml(d.deviceID||d.did||'');return'<div class="rule-item" style="cursor:pointer" onclick="selectDevice(\''+escAttr(h)+'\',\''+escAttr(did)+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><span style="color:var(--txt-primary);font-size:14px;font-weight:500">'+n+'</span><span style="color:var(--txt-muted);font-size:11px;margin-left:10px">'+h+'</span></div><span style="color:var(--txt-dim);font-size:10px;font-family:JetBrains Mono,monospace">DID: '+(did?did.substring(0,12)+'...':'—')+'</span></div></div>'}).join('');if(devices.length>0){const f=devices[0];selectDevice(f.hardware||f.model||'',f.deviceID||f.did||'')}}
+function selectDevice(hw,did){if(hw)document.getElementById('mi-hardware').value=hw;if(did)document.getElementById('mi-did').value=did}
+function escAttr(s){return String(s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}
 
-function setDot(id, cls) {
-  const d = document.getElementById(id);
-  d.className = 'dot ' + cls;
-}
+// ═══════════ Test HA ═══════════
+async function testHA(){const a=document.getElementById('ha-alert');showAlert(a,'warn','⟳ 测试中...');try{const r=await fetch('/api/test/ha',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:gv('ha-url'),token:gv('ha-token')})});const d=await r.json();showAlert(a,d.ok?'ok':'err',(d.ok?'✓ ':'✗ ')+d.msg)}catch(e){showAlert(a,'err','✗ '+e.message)}}
 
-function fmtUptime(sec) {
-  if (sec < 60) return sec + 's';
-  if (sec < 3600) return Math.floor(sec/60) + 'm ' + (sec%60) + 's';
-  return Math.floor(sec/3600) + 'h ' + Math.floor((sec%3600)/60) + 'm';
-}
+// ═══════════ DOMAIN INFO ═══════════
+const DINFO={light:{name:'灯光',icon:'💡',s:{turn_on:'开',turn_off:'关',toggle:'切换'},x:[{k:'brightness_pct',l:'亮度%',p:'{0}'}]},switch:{name:'开关',icon:'🔌',s:{turn_on:'开',turn_off:'关',toggle:'切换'},x:[]},climate:{name:'空调',icon:'🌡️',s:{set_hvac_mode:'开机',turn_off:'关机',set_temperature:'调温'},x:[{k:'hvac_mode',l:'模式',p:'cool'},{k:'temperature',l:'温度',p:'{0}'},{k:'delay_minutes',l:'延迟关(分)',p:'{0}'}]},scene:{name:'场景',icon:'🎬',s:{turn_on:'执行'},x:[]},media_player:{name:'媒体',icon:'📺',s:{turn_on:'开',turn_off:'关',media_play:'播放',media_pause:'暂停'},x:[]},script:{name:'脚本',icon:'⚡',s:{turn_on:'执行'},x:[]},automation:{name:'自动化',icon:'🤖',s:{turn_on:'启用',turn_off:'禁用'},x:[]},input_boolean:{name:'虚拟开关',icon:'🔘',s:{turn_on:'开',turn_off:'关',toggle:'切换'},x:[]}}
 
-// ── Bridge Control ──
-async function startBridge() {
-  showCtrlLoading(true);
-  await fetch('/api/bridge/start', {method:'POST'});
-  setTimeout(() => { fetchStatus(); showCtrlLoading(false); }, 800);
-}
-async function stopBridge() {
-  showCtrlLoading(true);
-  await fetch('/api/bridge/stop', {method:'POST'});
-  setTimeout(() => { fetchStatus(); showCtrlLoading(false); }, 500);
-}
-function showCtrlLoading(on) {
-  document.getElementById('ctrl-saving').classList.toggle('show', on);
-}
+// ═══════════ Rules ═══════════
+function renderRules(){const rules=cfg.intent_rules||[];const list=document.getElementById('rule-list');list.innerHTML='';rules.forEach((r,i)=>{list.appendChild(buildRule(r,i))})}
+function buildRule(rule,i){const a=rule.action||{};const d=a.domain||'light';const info=DINFO[d]||DINFO.light;const skip=new Set(['domain','service','entity_id','reply','temperature','brightness_pct','delay_minutes','hvac_mode']);const div=document.createElement('div');div.className='rule-item';div.dataset.idx=i;let h='<div class="rule-head"><span class="rule-num">#'+(i+1)+'</span><button class="rule-del" onclick="deleteRule('+i+')">✕</button></div><div class="rule-grid"><div class="field full"><label>你说的话</label><input type="text" class="r-p" value="'+escHtml(rule.pattern||'')+'" placeholder="打开客厅灯"></div><div class="field" style="grid-column:1/-1"><label>设备类型</label><div class="domain-select">';Object.entries(DINFO).forEach(([k,v])=>{h+='<button class="domain-btn '+(k===d?'active':'')+'" onclick="switchD(this,\''+k+'\')"><span class="domain-icon">'+v.icon+'</span>'+v.name+'</button>'});h+='</div><input type="hidden" class="r-d" value="'+escHtml(d)+'"></div><div class="field"><label>操作</label><select class="r-s" onchange="updX(this)">';Object.entries(info.s).forEach(([k,v])=>{h+='<option value="'+k+'" '+(a.service===k?'selected':'')+'>'+v+'</option>'});h+='</select></div><div class="field"><label>实体ID</label><input type="text" class="r-e" value="'+escHtml(a.entity_id||'')+'" placeholder="climate.xxx"></div><div class="extra-fields">';info.x.forEach(x=>{h+='<div class="field"><label>'+x.l+'</label><input type="text" class="r-xk" data-key="'+x.k+'" value="'+escHtml(a[x.k]||'')+'" placeholder="'+(x.p||'')+'"></div>'});h+='</div><div class="field full"><label>回复</label><input type="text" class="r-r" value="'+escHtml(a.reply||'好的')+'" placeholder="好的"></div><div class="field full"><label>其他(JSON)</label><input type="text" class="r-j" value="'+escHtml(extraJ(a,skip))+'" placeholder=\'{"brightness_pct":"{0}"}\'></div></div>';div.innerHTML=h;return div}
+function extraJ(a,s){const e={};for(const[k,v]of Object.entries(a))if(!s.has(k))e[k]=v;return Object.keys(e).length?JSON.stringify(e):''}
+function switchD(btn,d){btn.parentElement.querySelectorAll('.domain-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');const item=btn.closest('.rule-item');item.querySelector('.r-d').value=d;const info=DINFO[d];const sel=item.querySelector('.r-s');sel.innerHTML=Object.entries(info.s).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('');item.querySelector('.extra-fields').innerHTML=info.x.length?info.x.map(x=>'<div class="field"><label>'+x.l+'</label><input type="text" class="r-xk" data-key="'+x.k+'" value="" placeholder="'+(x.p||'')+'"></div>').join(''):''}
+function updX(sel){}
+function collectRulesFromUI(){const items=document.querySelectorAll('.rule-item');cfg.intent_rules=Array.from(items).map(el=>{const a={domain:el.querySelector('.r-d').value,service:el.querySelector('.r-s').value,entity_id:el.querySelector('.r-e').value.trim(),reply:el.querySelector('.r-r').value.trim()||'好的'};el.querySelectorAll('.r-xk').forEach(inp=>{const v=inp.value.trim();if(v)a[inp.dataset.key]=v});const j=el.querySelector('.r-j').value.trim();if(j){try{Object.assign(a,JSON.parse(j))}catch{}}return{pattern:el.querySelector('.r-p').value.trim(),action:a}})}
+function addRule(){collectRulesFromUI();cfg.intent_rules=cfg.intent_rules||[];cfg.intent_rules.push({pattern:'',action:{domain:'light',service:'turn_on',entity_id:'',reply:'好的'}});renderRules();const last=document.querySelector('.rule-list')?.lastElementChild;if(last)last.scrollIntoView({behavior:'smooth'})}
+function deleteRule(i){collectRulesFromUI();cfg.intent_rules.splice(i,1);renderRules()}
+function exportRules(){collectRulesFromUI();const b=new Blob([JSON.stringify(cfg.intent_rules,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='rules-'+(new Date().toISOString().slice(0,10))+'.json';a.click();URL.revokeObjectURL(a.href);showAlert(document.getElementById('rules-alert'),'ok','✓ 已导出')}
+function importRules(){const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=async()=>{try{const t=await inp.files[0].text();const r=JSON.parse(t);if(!Array.isArray(r))throw Error('需JSON数组');cfg.intent_rules=r;renderRules();showAlert(document.getElementById('rules-alert'),'ok','✓ 导入'+r.length+'条')}catch(e){showAlert(document.getElementById('rules-alert'),'err','✗ '+e.message)}};inp.click()}
+async function testRule(){collectRulesFromUI();const t=document.getElementById('test-input').value.trim();if(!t)return;const r=await fetch('/api/test/rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,rules:cfg.intent_rules||[]})});const d=await r.json();const el=document.getElementById('test-result');if(d.matched){el.style.color=d.executed?'var(--green)':'var(--orange)';el.textContent=(d.executed?'✓ 已执行':'⚠ 匹配')+'\n'+(d.msg||'')+'\n\n'+JSON.stringify(d.action,null,2)}else{el.style.color='var(--red)';el.textContent='✗ 未匹配'}}
 
-// ── Save Config ──
-async function saveXiaomi() {
-  const old = cfg.xiaomi || {};
-  cfg.xiaomi = {
-    username: gv('mi-username'),
-    password: gv('mi-password'),
-    hardware: gv('mi-hardware'),
-    device_did: gv('mi-did'),
-    tts_reply: document.getElementById('mi-tts').checked,
-    cookie_text: old.cookie_text || '',
-  };
-  await saveConfig('xiaomi');
-}
+// ═══════════ Logs ═══════════
+async function fetchLogs(){try{const r=await fetch('/api/logs?n=80');const logs=await r.json();const p=document.getElementById('log-panel');p.innerHTML=logs.map(l=>'<div class="log-line"><span class="log-time">'+l.time+'</span><span class="log-lvl-'+l.level+'">['+l.level+']</span><span class="log-msg">'+escHtml(l.msg)+'</span></div>').join('');if(autoScroll)p.scrollTop=p.scrollHeight}catch{}}
+function clearLogs(){document.getElementById('log-panel').innerHTML=''}
+function toggleAutoScroll(){autoScroll=!autoScroll;document.getElementById('btn-autoscroll').textContent='⬇自动滚动 '+(autoScroll?'ON':'OFF')}
 
-async function saveHA() {
-  cfg.homeassistant = { url: gv('ha-url'), token: gv('ha-token') };
-  await saveConfig('ha');
-}
-
-async function saveAdvanced() {
-  cfg.poll_interval_seconds = parseInt(gv('adv-interval')) || 2;
-  cfg.ai_mode = document.getElementById('adv-ai-mode').checked;
-  cfg.openai = {
-    api_base: gv('adv-ai-base') || 'https://api.openai.com',
-    api_key: gv('adv-ai-key'),
-    model: gv('adv-ai-model') || 'gpt-4o-mini',
-  };
-  await saveConfig('adv');
-}
-
-async function saveRules() {
-  collectRulesFromUI();
-  await saveConfig('rules');
-}
-
-async function saveConfig(section) {
-  const alertMap = {xiaomi:'xiaomi-alert', ha:'ha-alert', rules:'rules-alert', adv:'adv-alert'};
-  const a = document.getElementById(alertMap[section] || 'dash-alert');
-  try {
-    const r = await fetch('/api/config', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({config: cfg})
-    });
-    const d = await r.json();
-    showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '\u2713 ' : '\u2717 ') + (d.ok ? '保存成功' : '保存失败'));
-  } catch(e) {
-    showAlert(a, 'err', '\u2717 ' + e.message);
-  }
-  setTimeout(() => a.classList.remove('show'), 3000);
-}
-
-// ── Test Xiaomi ──
-async function testXiaomi() {
-  const a = document.getElementById('xiaomi-alert');
-  if (!gv('mi-username') && !(cfg.xiaomi||{}).username) {
-    showAlert(a, 'err', '\u2717 请先填写账号和密码');
-    return;
-  }
-  showAlert(a, 'warn', '\u27F3 正在登录并获取设备...');
-  try {
-    const ct = document.getElementById('mi-cookie-text')?.value?.trim() || '';
-    const r = await fetch('/api/test/xiaomi', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({username: gv('mi-username'), password: gv('mi-password'), use_saved: true, cookie_text: ct})
-    });
-    const d = await r.json();
-    if (d.need_verify) {
-      a.className = 'alert alert-warn show';
-      a.innerHTML = '\u26A0 ' + escHtml(d.msg) + '<br><a href="' + escAttr(d.verify_url) + '" target="_blank" style="color:var(--accent);font-weight:600;font-size:13px">\uD83D\uDCF1 点击此处打开短信验证页面</a>';
-      document.getElementById('mi-sts-card').style.display = '';
-    } else {
-      showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '\u2713 ' : '\u2717 ') + d.msg);
-      document.getElementById('mi-sts-card').style.display = 'none';
-    }
-    if (d.ok && d.devices && d.devices.length > 0) renderDeviceList(d.devices);
-  } catch(e) {
-    showAlert(a, 'err', '\u2717 请求失败: ' + e.message);
-  }
-}
-
-async function qrLogin() {
-  const a = document.getElementById('xiaomi-alert');
-  showAlert(a, 'warn', '\u27F3 正在生成二维码...');
-  try {
-    const r = await fetch('/api/qr/login', {method:'POST'});
-    const d = await r.json();
-    if (d.ok && d.qr_url) {
-      document.getElementById('qr-img').src = d.qr_url;
-      document.getElementById('qr-area').style.display = '';
-      document.getElementById('qr-msg').textContent = '请用米家 App 扫描二维码';
-      document.getElementById('qr-status').textContent = '等待扫码...';
-      showAlert(a, 'warn', '\uD83D\uDCF1 请用米家 App 扫描下方二维码');
-      if (qrPollTimer) clearInterval(qrPollTimer);
-      qrPollTimer = setInterval(pollQrLogin, 3000);
-    } else {
-      showAlert(a, 'err', '\u2717 ' + (d.msg||'生成二维码失败'));
-    }
-  } catch(e) {
-    showAlert(a, 'err', '\u2717 ' + e.message);
-  }
-}
-
-async function pollQrLogin() {
-  try {
-    const r = await fetch('/api/qr/poll');
-    const d = await r.json();
-    if (d.done) {
-      clearInterval(qrPollTimer);
-      document.getElementById('qr-status').textContent = d.msg;
-      document.getElementById('qr-area').style.display = 'none';
-      const a = document.getElementById('xiaomi-alert');
-      showAlert(a, 'ok', '\u2713 ' + d.msg);
-      const r2 = await fetch('/api/test/xiaomi', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({username: gv('mi-username'), password: gv('mi-password'), use_saved: true})
-      });
-      const d2 = await r2.json();
-      if (d2.ok && d2.devices && d2.devices.length > 0) renderDeviceList(d2.devices);
-    } else if (!d.ok) {
-      document.getElementById('qr-status').textContent = d.msg || '错误';
-    }
-  } catch(e) {}
-}
-
-// ── Devices ──
-async function loadDevices() {
-  const a = document.getElementById('devices-alert');
-  try {
-    const [dr, ar] = await Promise.all([fetch('/api/devices'), fetch('/api/aliases')]);
-    const dd = await dr.json();
-    const ad = await ar.json();
-    deviceAliases = ad.aliases || {};
-    if (!dd.ok) { showAlert(a, 'err', dd.msg); return; }
-    document.getElementById('device-count').textContent = dd.count + ' \u4E2A\u8BBE\u5907';
-    const list = document.getElementById('device-list');
-    const domainNames = {light:'\uD83D\uDCA1 \u706F\u5149',switch:'\uD83D\uDD0C \u5F00\u5173',climate:'\uD83C\uDF21\uFE0F \u7A7A\u8C03',scene:'\uD83C\uDFAC \u573A\u666F',media_player:'\uD83D\uDCFA \u5A92\u4F53',script:'\u26A1 \u811A\u672C',automation:'\uD83E\uDD16 \u81EA\u52A8\u5316',input_boolean:'\uD83D\uDD18 \u865A\u62DF\u5F00\u5173',fan:'\uD83C\uDF1F \u98CE\u6247',cover:'\uD83E\uDE9F \u7A97\u5E18',lock:'\uD83D\uDD12 \u95E8\u9501',vacuum:'\uD83E\uDDF9 \u626B\u5730\u673A'};
-    list.innerHTML = dd.devices.map(d => {
-      const alias = deviceAliases[d.entity_id] || '';
-      return '<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">' + escHtml(d.name) + '</div><div class="device-meta">' + escHtml(d.entity_id) + ' <span class="domain-tag">[' + (domainNames[d.domain]||d.domain) + ']</span></div></div><input type="text" class="alias-input" value="' + escHtml(alias) + '" placeholder="\u522B\u540D..." onchange="saveAlias(\'' + escAttr(d.entity_id) + '\', this.value)"></div></div>';
-    }).join('');
-  } catch(e) {
-    showAlert(a, 'err', '\u52A0\u8F7D\u5931\u8D25: ' + e.message);
-  }
-}
-
-async function saveAlias(eid, alias) {
-  await fetch('/api/aliases', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({entity_id: eid, alias: alias.trim()})
-  });
-  deviceAliases[eid] = alias.trim();
-}
-
-// ── Schedules ──
-async function loadSchedules() {
-  const a = document.getElementById('schedules-alert');
-  try {
-    const r = await fetch('/api/automations');
-    const d = await r.json();
-    if (!d.ok) { showAlert(a, 'err', d.msg); return; }
-    document.getElementById('schedule-count').textContent = d.count + ' \u4E2A\u5B9A\u65F6\u4EFB\u52A1';
-    const list = document.getElementById('schedule-list');
-    if (!d.automations.length) {
-      list.innerHTML = '<div class="empty-state">\u6682\u65E0\u5B9A\u65F6\u4EFB\u52A1<br><span style="font-size:11px">\u5BF9\u5C0F\u7231\u8BF4\u300C\u6BCF\u5929\u4E03\u70B9\u534A\u6253\u5F00\u70ED\u6C34\u5668\u300D\u5373\u53EF\u521B\u5EFA</span></div>';
-      return;
-    }
-    list.innerHTML = d.automations.map(s => {
-      const name = escHtml(s.alias || s.entity_id);
-      const eid = escHtml(s.entity_id);
-      const id = s.entity_id.replace('automation.', '');
-      const state = s.state === 'on';
-      const last = s.last_triggered ? new Date(s.last_triggered).toLocaleString('zh-CN') : '\u4ECE\u672A\u89E6\u53D1';
-      return '<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">' + name + '</div><div class="device-meta">' + eid + '</div><div style="font-size:10px;color:var(--text-quaternary);margin-top:2px">\u4E0A\u6B21\u89E6\u53D1: ' + last + '</div></div><div style="display:flex;align-items:center;gap:10px"><span class="schedule-state ' + (state?'on':'off') + '">' + (state?'\u5DF2\u542F\u7528':'\u5DF2\u7981\u7528') + '</span><button class="rule-del" onclick="deleteSchedule(\'' + escAttr(id) + '\')">\u2715 \u5220\u9664</button></div></div></div>';
-    }).join('');
-  } catch(e) {
-    showAlert(a, 'err', '\u52A0\u8F7D\u5931\u8D25: ' + e.message);
-  }
-}
-
-async function deleteSchedule(id) {
-  if (!confirm('\u786E\u5B9A\u5220\u9664\u6B64\u5B9A\u65F6\u4EFB\u52A1\uFF1F')) return;
-  const a = document.getElementById('schedules-alert');
-  try {
-    const r = await fetch('/api/automations/' + encodeURIComponent(id), {method:'DELETE'});
-    const d = await r.json();
-    if (d.ok) { showAlert(a, 'ok', '\u5DF2\u5220\u9664'); loadSchedules(); }
-    else showAlert(a, 'err', d.detail || '\u5220\u9664\u5931\u8D25');
-  } catch(e) { showAlert(a, 'err', '\u5220\u9664\u5931\u8D25: ' + e.message); }
-}
-
-function renderDeviceList(devices) {
-  const box = document.getElementById('mi-device-list');
-  const container = document.getElementById('mi-devices');
-  const countEl = document.getElementById('mi-device-count');
-  box.style.display = '';
-  countEl.textContent = '(' + devices.length + ' \u53F0)';
-  container.innerHTML = devices.map(d => {
-    const name = escHtml(d.name || '\u672A\u77E5\u8BBE\u5907');
-    const hw = escHtml(d.hardware || d.model || '');
-    const did = escHtml(d.deviceID || d.did || '');
-    return '<div class="rule-item" style="cursor:pointer" onclick="selectDevice(\'' + escAttr(hw) + '\',\'' + escAttr(did) + '\')" title="\u70B9\u51FB\u9009\u62E9\u6B64\u8BBE\u5907"><div style="display:flex;align-items:center;justify-content:space-between"><div><span style="color:var(--text-primary);font-size:14px;font-weight:500">' + name + '</span><span style="color:var(--text-tertiary);font-size:11px;margin-left:10px">' + hw + '</span></div><span style="color:var(--text-quaternary);font-size:10px;font-family:var(--mono)">DID: ' + (did ? did.substring(0,12)+'...' : '\u2014') + '</span></div></div>';
-  }).join('');
-  if (devices.length > 0) {
-    const first = devices[0];
-    selectDevice(first.hardware || first.model || '', first.deviceID || first.did || '');
-  }
-}
-
-function selectDevice(hw, did) {
-  if (hw) document.getElementById('mi-hardware').value = hw;
-  if (did) document.getElementById('mi-did').value = did;
-}
-
-function escAttr(s) {
-  return String(s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
-}
-
-// ── Test HA ──
-async function testHA() {
-  const a = document.getElementById('ha-alert');
-  showAlert(a, 'warn', '\u27F3 正在测试连接...');
-  try {
-    const r = await fetch('/api/test/ha', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({url: gv('ha-url'), token: gv('ha-token')})
-    });
-    const d = await r.json();
-    showAlert(a, d.ok ? 'ok' : 'err', (d.ok ? '\u2713 ' : '\u2717 ') + d.msg);
-  } catch(e) {
-    showAlert(a, 'err', '\u2717 请求失败: ' + e.message);
-  }
-}
-
-// ── Domain Map ──
-const DOMAIN_INFO = {
-  light:       { name:'灯光', icon:'\uD83D\uDCA1', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[{key:'brightness_pct',label:'亮度百分比',placeholder:'{0}'}] },
-  switch:      { name:'开关/插座', icon:'\uD83D\uDD0C', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[] },
-  climate:     { name:'空调/温控', icon:'\uD83C\uDF21\uFE0F', services:{set_hvac_mode:'打开',turn_off:'关闭',set_temperature:'设置温度'}, extras:[{key:'hvac_mode',label:'运行模式(cool/heat/dry)',placeholder:'cool'},{key:'temperature',label:'目标温度',placeholder:'{0}'},{key:'delay_minutes',label:'延迟关（分钟）',placeholder:'{0}'}] },
-  scene:       { name:'场景', icon:'\uD83C\uDFAC', services:{turn_on:'激活'}, extras:[] },
-  media_player:{ name:'媒体/电视', icon:'\uD83D\uDCFA', services:{turn_on:'打开',turn_off:'关闭',media_play:'播放',media_pause:'暂停'}, extras:[] },
-  script:      { name:'脚本', icon:'\u26A1', services:{turn_on:'执行'}, extras:[] },
-  automation:  { name:'自动化', icon:'\uD83E\uDD16', services:{turn_on:'启用',turn_off:'禁用'}, extras:[] },
-  input_boolean:{ name:'虚拟开关', icon:'\uD83D\uDD18', services:{turn_on:'打开',turn_off:'关闭',toggle:'切换'}, extras:[] },
-};
-
-// ── Rule Editor ──
-function renderRules() {
-  const rules = cfg.intent_rules || [];
-  const list = document.getElementById('rule-list');
-  list.innerHTML = '';
-  rules.forEach((rule, i) => { list.appendChild(buildRuleEl(rule, i)); });
-}
-
-function buildRuleEl(rule, i) {
-  const action = rule.action || {};
-  const domain = action.domain || 'light';
-  const info = DOMAIN_INFO[domain] || DOMAIN_INFO.light;
-  const skipExtra = new Set(['domain','service','entity_id','reply','temperature','brightness_pct','delay_minutes','hvac_mode']);
-  const div = document.createElement('div');
-  div.className = 'rule-item';
-  div.dataset.idx = i;
-  div.innerHTML = '<div class="rule-header"><span class="rule-num">#' + (i+1) + '</span><button class="rule-del" onclick="deleteRule(' + i + ')">\u2715 \u5220\u9664</button></div><div class="rule-grid"><div class="form-field full"><label>\u4F60\u8BF4\u7684\u8BDD\uFF08{num} \u5339\u914D\u6570\u5B57\uFF0C\u62EC\u53F7\u5185\u4E3A\u53EF\u9009\u9879\uFF09</label><input type="text" class="r-pattern" value="' + escHtml(rule.pattern||'') + '" placeholder="\u6253\u5F00\u5BA2\u5385\u706F"></div><div class="form-field" style="grid-column:1/-1"><label>\u63A7\u5236\u4EC0\u4E48\u8BBE\u5907</label><div class="domain-select">';
-  Object.entries(DOMAIN_INFO).forEach(([d,inf]) => {
-    div.innerHTML += '<button class="domain-btn ' + (d===domain?'active':'') + '" onclick="switchDomain(this,\'' + d + '\')" title="' + inf.name + '"><span class="domain-icon">' + inf.icon + '</span><span>' + inf.name + '</span></button>';
-  });
-  div.innerHTML += '</div><input type="hidden" class="r-domain" value="' + escHtml(domain) + '"></div><div class="form-field"><label>\u64CD\u4F5C</label><select class="r-service" onchange="updateExtraFields(this)">';
-  Object.entries(info.services).forEach(([s,label]) => {
-    div.innerHTML += '<option value="' + s + '" ' + (action.service===s?'selected':'') + '>' + label + '</option>';
-  });
-  div.innerHTML += '</select></div><div class="form-field"><label>\u5B9E\u4F53 ID</label><input type="text" class="r-entity" value="' + escHtml(action.entity_id||'') + '" placeholder="climate.xxx_climate"></div><div class="extra-fields">';
-  if (info.extras.length) {
-    info.extras.forEach(ext => {
-      div.innerHTML += '<div class="form-field"><label>' + ext.label + '</label><input type="text" class="r-extra-kv" data-key="' + ext.key + '" value="' + escHtml(action[ext.key]||'') + '" placeholder="' + (ext.placeholder||'') + '"></div>';
-    });
-  }
-  div.innerHTML += '</div><div class="form-field full"><label>\u56DE\u590D\u6587\u5B57</label><input type="text" class="r-reply" value="' + escHtml(action.reply||'\u597D\u7684') + '" placeholder="\u597D\u7684\uFF0C\u5DF2\u5B8C\u6210"></div><div class="form-field full"><label>\u5176\u4ED6\u53C2\u6570\uFF08JSON\uFF09</label><input type="text" class="r-extra" value="' + escHtml(getExtra2(action, skipExtra)) + '" placeholder=\'{"brightness_pct":"{0}"}\'></div></div>';
-  return div;
-}
-
-function getExtra2(action, skip) {
-  const extra = {};
-  for (const [k,v] of Object.entries(action)) if (!skip.has(k)) extra[k]=v;
-  return Object.keys(extra).length ? JSON.stringify(extra) : '';
-}
-
-function switchDomain(btn, domain) {
-  btn.parentElement.querySelectorAll('.domain-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  const item = btn.closest('.rule-item');
-  item.querySelector('.r-domain').value = domain;
-  const info = DOMAIN_INFO[domain];
-  const sel = item.querySelector('.r-service');
-  sel.innerHTML = Object.entries(info.services).map(([s,label]) => '<option value="'+s+'">'+label+'</option>').join('');
-  const extrasDiv = item.querySelector('.extra-fields');
-  extrasDiv.innerHTML = info.extras.length ? info.extras.map(ext => '<div class="form-field"><label>'+ext.label+'</label><input type="text" class="r-extra-kv" data-key="'+ext.key+'" value="" placeholder="'+(ext.placeholder||'')+'"></div>').join('') : '';
-}
-
-function updateExtraFields(sel) {}
-
-function collectRulesFromUI() {
-  const items = document.querySelectorAll('.rule-item');
-  cfg.intent_rules = Array.from(items).map(el => {
-    const action = {
-      domain: el.querySelector('.r-domain').value,
-      service: el.querySelector('.r-service').value,
-      entity_id: el.querySelector('.r-entity').value.trim(),
-      reply: el.querySelector('.r-reply').value.trim() || '\u597D\u7684',
-    };
-    el.querySelectorAll('.r-extra-kv').forEach(inp => {
-      const v = inp.value.trim();
-      if (v) action[inp.dataset.key] = v;
-    });
-    const extra = el.querySelector('.r-extra').value.trim();
-    if (extra) { try { Object.assign(action, JSON.parse(extra)); } catch {} }
-    return { pattern: el.querySelector('.r-pattern').value.trim(), action };
-  });
-}
-
-function addRule() {
-  collectRulesFromUI();
-  cfg.intent_rules = cfg.intent_rules || [];
-  cfg.intent_rules.push({pattern:'', action:{domain:'light', service:'turn_on', entity_id:'', reply:'\u597D\u7684'}});
-  renderRules();
-  const last = document.querySelector('.rule-list')?.lastElementChild;
-  if (last) last.scrollIntoView({behavior:'smooth'});
-}
-
-function deleteRule(i) {
-  collectRulesFromUI();
-  cfg.intent_rules.splice(i, 1);
-  renderRules();
-}
-
-// ── Export/Import ──
-function exportRules() {
-  collectRulesFromUI();
-  const blob = new Blob([JSON.stringify(cfg.intent_rules, null, 2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'rules-backup-' + new Date().toISOString().slice(0,10) + '.json';
-  a.click();
-  URL.revokeObjectURL(a.href);
-  showAlert(document.getElementById('rules-alert'), 'ok', '\u2713 \u89C4\u5219\u5DF2\u5BFC\u51FA');
-}
-
-function importRules() {
-  const inp = document.createElement('input');
-  inp.type = 'file';
-  inp.accept = '.json';
-  inp.onchange = async () => {
-    try {
-      const text = await inp.files[0].text();
-      const rules = JSON.parse(text);
-      if (!Array.isArray(rules)) throw new Error('\u683C\u5F0F\u9519\u8BEF\uFF1A\u9700\u8981 JSON \u6570\u7EC4');
-      cfg.intent_rules = rules;
-      renderRules();
-      showAlert(document.getElementById('rules-alert'), 'ok', '\u2713 \u5DF2\u5BFC\u5165 ' + rules.length + ' \u6761\u89C4\u5219\uFF08\u8BB0\u5F97\u4FDD\u5B58\uFF09');
-    } catch(e) {
-      showAlert(document.getElementById('rules-alert'), 'err', '\u2717 \u5BFC\u5165\u5931\u8D25: ' + e.message);
-    }
-  };
-  inp.click();
-}
-
-// ── Test Rule ──
-async function testRule() {
-  collectRulesFromUI();
-  const text = document.getElementById('test-input').value.trim();
-  if (!text) return;
-  const r = await fetch('/api/test/rule', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({text, rules: cfg.intent_rules || []})
-  });
-  const d = await r.json();
-  const el = document.getElementById('test-result');
-  if (d.matched) {
-    el.style.color = d.executed ? 'var(--green)' : 'var(--orange)';
-    el.textContent = (d.executed ? '\u2713 \u5DF2\u6267\u884C' : '\u26A0 \u5339\u914D\u6210\u529F\u4F46\u672A\u6267\u884C') + '\\n' + (d.msg || '') + '\\n\\n' + JSON.stringify(d.action, null, 2);
-  } else {
-    el.style.color = 'var(--red)';
-    el.textContent = '\u2717 \u672A\u5339\u914D\u4EFB\u4F55\u89C4\u5219';
-  }
-}
-
-// ── Logs ──
-async function fetchLogs() {
-  try {
-    const r = await fetch('/api/logs?n=80');
-    const logs = await r.json();
-    const panel = document.getElementById('log-panel');
-    panel.innerHTML = logs.map(l => '<div class="log-line"><span class="log-time">' + l.time + '</span><span class="log-lvl-' + l.level + '">[' + l.level + ']</span><span class="log-msg">' + escHtml(l.msg) + '</span></div>').join('');
-    if (autoScroll) panel.scrollTop = panel.scrollHeight;
-  } catch {}
-}
-function clearLogs() { document.getElementById('log-panel').innerHTML = ''; }
-function toggleAutoScroll() {
-  autoScroll = !autoScroll;
-  document.getElementById('btn-autoscroll').textContent = '\u2B1B \u81EA\u52A8\u6EDA\u52A8 ' + (autoScroll ? 'ON' : 'OFF');
-}
-
-// ── Utils ──
-function showAlert(el, type, msg) { el.className = 'alert alert-' + type + ' show'; el.textContent = msg; }
-function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+// ═══════════ Utils ═══════════
+function showAlert(el,t,m){el.className='alert '+t+' show';el.textContent=m}
+function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 
 init();
 </script>
