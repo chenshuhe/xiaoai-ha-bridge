@@ -796,6 +796,13 @@ body{
             <div class="field" id="ai-base-field"><label>Base URL</label><input type="text" id="adv-ai-base" value="https://api.openai.com"></div>
             <div class="field"><label>API Key</label><input type="password" id="adv-ai-key" placeholder="sk-..."></div>
             <div class="field"><label>模型</label><input type="text" id="adv-ai-model" value="gpt-4o-mini"></div>
+            <div class="field"><label>多轮上下文</label><label class="switch-label"><input type="checkbox" id="adv-ai-context" onchange="toggleContextFields()"><span class="switch-track"></span><span style="font-size:12px;font-weight:400">承接“把它关掉”</span></label></div>
+            <div class="field" id="ai-context-turns-field"><label>注入轮数</label><input type="number" id="adv-ai-context-turns" min="1" max="8" value="4"></div>
+            <div class="field"><label>缺信息反问</label><label class="switch-label"><input type="checkbox" id="adv-ai-clarify" onchange="toggleContextFields()"><span class="switch-track"></span><span style="font-size:12px;font-weight:400">“您说的是哪个空调？”</span></label></div>
+            <div class="field" id="ai-clarify-ttl-field"><label>反问有效期(秒)</label><input type="number" id="adv-ai-clarify-ttl" min="10" max="120" value="30"></div>
+            <div class="field"><label>精简设备清单</label><label class="switch-label"><input type="checkbox" id="adv-ai-device-filter"><span class="switch-track"></span><span style="font-size:12px;font-weight:400">未命中自动全量重试</span></label></div>
+            <div class="field"><label>非设备指令</label><select id="adv-ai-fallback" onchange="toggleFallbackText()"><option value="native">交给小爱原生回答</option><option value="reply">AI 生成回复并播报</option><option value="prompt">播报固定话术</option></select></div>
+            <div class="field" id="ai-fallback-text-field" style="display:none"><label>固定话术</label><input type="text" id="adv-ai-fallback-text" value="抱歉，我没听懂这个指令，请换个说法。"></div>
           </div>
         </div>
       </div>
@@ -857,9 +864,20 @@ function applyConfigToUI() {
   sel.selectedIndex=known[base]!==undefined?known[base]:3;
   if(sel.selectedIndex>=3)document.getElementById('adv-ai-base').value=base;
   safeCheck('adv-ai-mode',cfg.ai_mode||false);toggleAISettings();onProviderChange();
+  // 新增的 AI 行为开关：一律带默认值，兼容还没写过这些键的老配置
+  safeCheck('adv-ai-context',cfg.ai_context_enabled!==false);
+  safeSet('adv-ai-context-turns',cfg.ai_context_turns??4);
+  safeCheck('adv-ai-clarify',cfg.ai_clarify_enabled!==false);
+  safeSet('adv-ai-clarify-ttl',cfg.ai_clarify_ttl??30);
+  safeCheck('adv-ai-device-filter',cfg.ai_device_filter!==false);
+  safeSet('adv-ai-fallback',cfg.ai_fallback||'native');
+  safeSet('adv-ai-fallback-text',cfg.ai_fallback_text||'抱歉，我没听懂这个指令，请换个说法。');
+  toggleFallbackText();toggleContextFields();
 }
 
-function toggleAISettings(){const on=document.getElementById('adv-ai-mode').checked;document.getElementById('ai-settings').style.display=on?'':'none';document.getElementById('ai-mode-text').textContent=on?'已开启':'关闭'}
+function toggleAISettings(){const on=document.getElementById('adv-ai-mode').checked;document.getElementById('ai-settings').style.display=on?'':'none';document.getElementById('ai-mode-text').textContent=on?'已开启':'关闭';toggleFallbackText();toggleContextFields()}
+function toggleFallbackText(){const s=document.getElementById('adv-ai-fallback');const f=document.getElementById('ai-fallback-text-field');if(!s||!f)return;f.style.display=s.value==='prompt'?'':'none'}
+function toggleContextFields(){const c=document.getElementById('adv-ai-context');const cl=document.getElementById('adv-ai-clarify');const tf=document.getElementById('ai-context-turns-field');const yf=document.getElementById('ai-clarify-ttl-field');if(tf)tf.style.opacity=c&&c.checked?'':'0.45';if(yf)yf.style.opacity=cl&&cl.checked?'':'0.45'}
 function onProviderChange(){const sel=document.getElementById('adv-ai-provider');const bf=document.getElementById('ai-base-field');const bi=document.getElementById('adv-ai-base');const mi=document.getElementById('adv-ai-model');const def={'https://api.openai.com':'gpt-4o-mini','https://api.deepseek.com':'deepseek-chat','https://api.siliconflow.cn':'deepseek-ai/DeepSeek-V3'};if(sel.value==='custom'){bf.style.display=''}else{bf.style.display='none';bi.value=sel.value;if(def[sel.value])mi.value=def[sel.value]}}
 function safeSet(id,v){const el=document.getElementById(id);if(el)el.value=v}
 function safeCheck(id,v){const el=document.getElementById(id);if(el)el.checked=v}
@@ -906,7 +924,7 @@ function showLoad(on){document.getElementById('ctrl-loading').classList.toggle('
 // ═══════════ Save ═══════════
 async function saveXiaomi(){const o=cfg.xiaomi||{};cfg.xiaomi={username:gv('mi-username'),password:gv('mi-password'),hardware:gv('mi-hardware'),device_did:gv('mi-did'),tts_reply:document.getElementById('mi-tts').checked,cookie_text:o.cookie_text||''};await saveCfg('xiaomi')}
 async function saveHA(){cfg.homeassistant={url:gv('ha-url'),token:gv('ha-token')};await saveCfg('ha')}
-async function saveAdvanced(){cfg.poll_interval_seconds=parseInt(gv('adv-interval'))||2;cfg.ai_mode=document.getElementById('adv-ai-mode').checked;cfg.openai={api_base:gv('adv-ai-base')||'https://api.openai.com',api_key:gv('adv-ai-key'),model:gv('adv-ai-model')||'gpt-4o-mini'};await saveCfg('adv')}
+async function saveAdvanced(){cfg.poll_interval_seconds=parseInt(gv('adv-interval'))||2;cfg.ai_mode=document.getElementById('adv-ai-mode').checked;cfg.openai={api_base:gv('adv-ai-base')||'https://api.openai.com',api_key:gv('adv-ai-key'),model:gv('adv-ai-model')||'gpt-4o-mini'};cfg.ai_context_enabled=document.getElementById('adv-ai-context').checked;cfg.ai_context_turns=parseInt(gv('adv-ai-context-turns'))||4;cfg.ai_clarify_enabled=document.getElementById('adv-ai-clarify').checked;cfg.ai_clarify_ttl=parseInt(gv('adv-ai-clarify-ttl'))||30;cfg.ai_device_filter=document.getElementById('adv-ai-device-filter').checked;cfg.ai_fallback=gv('adv-ai-fallback')||'native';cfg.ai_fallback_text=gv('adv-ai-fallback-text')||'抱歉，我没听懂这个指令，请换个说法。';await saveCfg('adv')}
 async function saveRules(){collectRulesFromUI();await saveCfg('rules')}
 async function saveCfg(sec){const map={xiaomi:'xiaomi-alert',ha:'ha-alert',rules:'rules-alert',adv:'adv-alert'};const a=document.getElementById(map[sec]||'dash-alert');try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:cfg})});const d=await r.json();showAlert(a,d.ok?'ok':'err',(d.ok?'✓ ':'✗ ')+(d.ok?'保存成功':'保存失败'))}catch(e){showAlert(a,'err','✗ '+e.message)}setTimeout(()=>a.classList.remove('show'),3000)}
 
@@ -943,7 +961,7 @@ function addRule(){collectRulesFromUI();cfg.intent_rules=cfg.intent_rules||[];cf
 function deleteRule(i){collectRulesFromUI();cfg.intent_rules.splice(i,1);renderRules()}
 function exportRules(){collectRulesFromUI();const b=new Blob([JSON.stringify(cfg.intent_rules,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='rules-'+(new Date().toISOString().slice(0,10))+'.json';a.click();URL.revokeObjectURL(a.href);showAlert(document.getElementById('rules-alert'),'ok','✓ 已导出')}
 function importRules(){const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=async()=>{try{const t=await inp.files[0].text();const r=JSON.parse(t);if(!Array.isArray(r))throw Error('需JSON数组');cfg.intent_rules=r;renderRules();showAlert(document.getElementById('rules-alert'),'ok','✓ 导入'+r.length+'条')}catch(e){showAlert(document.getElementById('rules-alert'),'err','✗ '+e.message)}};inp.click()}
-async function testRule(){collectRulesFromUI();const t=document.getElementById('test-input').value.trim();if(!t)return;const r=await fetch('/api/test/rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,rules:cfg.intent_rules||[]})});const d=await r.json();const el=document.getElementById('test-result');if(d.matched){el.style.color=d.executed?'var(--green)':'var(--orange)';el.textContent=(d.executed?'✓ 已执行':'⚠ 匹配')+'\n'+(d.msg||'')+'\n\n'+JSON.stringify(d.action,null,2)}else{el.style.color='var(--red)';el.textContent='✗ 未匹配'}}
+async function testRule(){collectRulesFromUI();const t=document.getElementById('test-input').value.trim();if(!t)return;const r=await fetch('/api/test/rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,rules:cfg.intent_rules||[]})});const d=await r.json();const el=document.getElementById('test-result');if(d.clarify){el.style.color='var(--orange)';el.textContent='❓ 需要澄清\n'+(d.msg||'')+'\n\n候选设备:\n'+d.clarify.candidates.map(c=>'  · '+c).join('\n')}else if(d.matched){el.style.color=d.executed?'var(--green)':'var(--orange)';const tag=d.ai_used?'🤖 AI 解析':'📋 规则匹配';el.textContent=(d.executed?'✓ 已执行':'⚠ 匹配')+' · '+tag+'\n'+(d.msg||'')+'\n\n'+JSON.stringify(d.action,null,2)}else{el.style.color='var(--red)';el.textContent='✗ '+(d.msg||'未匹配')}}
 
 // ═══════════ Logs ═══════════
 async function fetchLogs(){try{const r=await fetch('/api/logs?n=80');const logs=await r.json();const p=document.getElementById('log-panel');p.innerHTML=logs.map(l=>'<div class="log-line"><span class="log-time">'+l.time+'</span><span class="log-lvl-'+l.level+'">['+l.level+']</span><span class="log-msg">'+escHtml(l.msg)+'</span></div>').join('');if(autoScroll)p.scrollTop=p.scrollHeight}catch{}}
