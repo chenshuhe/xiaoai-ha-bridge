@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.11.3"
+VERSION = "3.11.4"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -2347,15 +2347,56 @@ async def _wait_until_silent(na, device_id: str, timeout: float = 8.0) -> bool:
     return False
 
 
+async def _playback_status(na, device_id: str):
+    """当前播放状态：1=在播、3=空闲、2=已停。取不到返回 None。"""
+    try:
+        resp = await na.player_get_status(device_id)
+        info = ((resp or {}).get("data") or {}).get("info") or ""
+        return json.loads(info).get("status") if info else None
+    except Exception:
+        return None
+
+
+async def _resume_after_speaking(na, device_id: str, budget: float = 20.0) -> None:
+    """等桥接器的播报说完，把之前被打断的内容恢复播放。
+
+    音箱的接口分不清"小爱的回答"和"你放的音乐"，所以打断音乐是不可避免的；
+    这里在播报结束后调 player_play 把它接回去，代价只是短暂停顿而不是中断整首歌。
+    """
+    deadline = time.time() + budget
+    # 1) 先等我们这条真正开始播（最多 3 秒；没等到就说明被吞了，不必恢复）
+    t0 = time.time()
+    started = False
+    while time.time() - t0 < 3:
+        if await _playback_status(na, device_id) == 1:
+            started = True
+            break
+        await asyncio.sleep(0.4)
+    if not started:
+        log.info("↩ 播报似乎没生效，跳过恢复播放")
+        return
+    # 2) 再等它播完
+    while time.time() < deadline:
+        await asyncio.sleep(0.6)
+        if await _playback_status(na, device_id) != 1:
+            break
+    try:
+        await na.player_play(device_id)
+        log.info("▶ 已恢复被打断的播放")
+    except Exception as e:
+        log.warning("恢复播放失败: %s", e)
+
+
 async def _stop_playback(na, device_id: str) -> bool:
-    """打断小爱当前正在播的内容（只在真的在播时才动手）。
+    """打断当前正在播的内容（只在真的在播时才动手）。返回是否真的打断了什么。
 
     澄清场景下小爱总会先说一句"没有发现可以操作的空调…"，等它说完要 5-6 秒；
     直接打断可以让反问基本立刻响起。
 
-    ⚠ 这个 stop 用的 media 参数是 app_ios，但实测它能停掉 mibrain 发出的 TTS，
-    所以**不排除也会停掉正在播放的音乐**。只在"刚发生一轮语音交互"时调用，
-    降低误伤概率。
+    ⚠ 实测这个 stop **连正在播放的音乐一起停**（音箱接口分不清"小爱在说话"
+    和"音乐在放"，player_get_status 只返回 status/volume/loop_type）。
+    所以调用方拿到 True 后要负责用 _resume_after_speaking 接回去，
+    否则用户放歌时喊一句指令，歌就断了。
     """
     try:
         resp = await na.player_get_status(device_id)
@@ -2384,8 +2425,9 @@ async def _speak(na, device_id: str, text: str, *,
     """
     if not text:
         return False
+    stopped_something = False
     if interrupt:
-        await _stop_playback(na, device_id)
+        stopped_something = await _stop_playback(na, device_id)
     elif wait_silent:
         await _wait_until_silent(na, device_id)
     for attempt in (1, 2):
@@ -2395,6 +2437,9 @@ async def _speak(na, device_id: str, text: str, *,
             dcode = ((resp or {}).get("data") or {}).get("code")
             if code == 0 and dcode in (0, None):
                 log.info("🎙️ TTS 播报: %s", text)
+                if stopped_something:
+                    # 打断时可能误停了你正在放的内容，播完接回去
+                    asyncio.create_task(_resume_after_speaking(na, device_id))
                 return True
             log.warning("TTS 返回异常(第%d次): code=%s data.code=%s resp=%s",
                         attempt, code, dcode, str(resp)[:200])
@@ -2403,6 +2448,8 @@ async def _speak(na, device_id: str, text: str, *,
         if attempt == 1:
             await asyncio.sleep(1.2)
     log.error("⚠ TTS 播报失败（重试后仍不成）: %s", text)
+    if stopped_something:
+        asyncio.create_task(_resume_after_speaking(na, device_id))
     return False
 
 
