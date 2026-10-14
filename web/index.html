@@ -545,6 +545,27 @@ body{
 .alias-in{width:140px;background:var(--page-bg);border:1px solid var(--border-default);border-radius:var(--r-md);padding:3px 8px;color:var(--txt-primary);font-size:12px;outline:none;transition:.15s}
 .alias-in:focus{border-color:var(--accent)}
 
+/* ── 设备管理：左侧类型侧栏 + 右侧列表 ── */
+.dev-layout{display:flex;gap:14px;align-items:flex-start}
+.dev-types{flex:0 0 152px;display:flex;flex-direction:column;gap:3px;background:var(--surface-bg);border:1px solid var(--border-default);border-radius:var(--r-lg);padding:8px;position:sticky;top:0}
+.dev-type{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 10px;border-radius:var(--r-md);border:1px solid transparent;font-size:12px;color:var(--txt-secondary);cursor:pointer;transition:.15s;white-space:nowrap}
+.dev-type:hover{background:var(--hover-bg)}
+.dev-type.active{background:var(--accent-bg);border-color:var(--accent-border);color:var(--accent)}
+.dev-type b{font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--txt-dim)}
+.dev-type.active b{color:var(--accent)}
+.dev-main{flex:1;min-width:0}
+.dev-toolbar{display:flex;gap:8px;margin-bottom:10px}
+.dev-search{flex:1;min-width:0;background:var(--page-bg);border:1px solid var(--border-default);border-radius:var(--r-md);padding:8px 12px;color:var(--txt-primary);font-size:13px;outline:none;transition:.15s}
+.dev-search:focus{border-color:var(--accent)}
+.dev-search::placeholder{color:var(--txt-dim)}
+.dev-summary{font-size:11px;color:var(--txt-muted);margin-bottom:10px}
+.dev-summary em{font-style:normal;color:var(--green)}
+.rule-item.has-alias{border-left:2px solid var(--green)}
+@media(max-width:760px){
+  .dev-layout{flex-direction:column}
+  .dev-types{flex:0 0 auto;width:100%;flex-direction:row;flex-wrap:wrap;position:static}
+}
+
 /* ── Empty State / Spinner ── */
 .empty-state{text-align:center;padding:36px 20px;color:var(--txt-dim);font-size:13px}
 .spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--border-default);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
@@ -764,8 +785,17 @@ body{
     <div class="page" id="page-devices">
       <div class="page-head"><div class="page-title"><span class="icon">&#9670;</span>设备管理</div><div class="page-desc">HA 设备别名设置</div></div>
       <div id="devices-alert" class="alert"></div>
-      <div class="btn-group"><button class="btn btn-primary" onclick="loadDevices()">&#128260;刷新</button><span style="color:var(--txt-muted);font-size:12px;margin-left:8px" id="device-count"></span></div>
-      <div class="rule-list" id="device-list"></div>
+      <div class="dev-layout">
+        <aside class="dev-types" id="device-types"></aside>
+        <div class="dev-main">
+          <div class="dev-toolbar">
+            <input type="text" id="device-search" class="dev-search" placeholder="搜索名称 / entity_id / 别名..." oninput="renderDeviceItems()">
+            <button class="btn" onclick="loadDevices()">&#128260;刷新</button>
+          </div>
+          <div class="dev-summary" id="device-count"></div>
+          <div class="rule-list" id="device-list"></div>
+        </div>
+      </div>
     </div>
 
     <!-- ─── Schedules ─── -->
@@ -803,6 +833,25 @@ body{
             <div class="field"><label>非设备指令</label><select id="adv-ai-fallback" onchange="toggleFallbackText()"><option value="native">交给小爱原生回答</option><option value="reply">AI 生成回复并播报</option><option value="prompt">播报固定话术</option></select></div>
             <div class="field" id="ai-fallback-text-field" style="display:none"><label>固定话术</label><input type="text" id="adv-ai-fallback-text" value="抱歉，我没听懂这个指令，请换个说法。"></div>
           </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <div class="card-head"><div class="card-title"><span>&#11014;</span>版本更新</div></div>
+        <div style="font-size:12px;color:var(--txt-muted);margin-bottom:10px">
+          从 GitHub 拉取最新代码并重启。只在代码已挂载进容器时可用（<code>docker-compose.yml</code> 里的 <code>bridge.py</code> / <code>web</code> 挂载）。
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>仓库</label><input type="text" id="adv-update-repo" value="chenshuhe/xiaoai-ha-bridge"></div>
+          <div class="field"><label>GitHub 代理（留空直连）</label><input type="text" id="adv-update-proxy" placeholder="http://代理地址:端口"></div>
+        </div>
+        <div class="input-row" style="margin-top:10px">
+          <button class="btn" onclick="checkUpdate()">&#128260;检查更新</button>
+          <button class="btn btn-primary" id="btn-apply-update" style="display:none" onclick="applyUpdateRemote()">&#11014;立即更新</button>
+          <span id="update-status" style="font-size:12px;color:var(--txt-muted)"></span>
+        </div>
+        <div style="font-size:11px;color:var(--txt-dim);margin-top:8px">
+          新版本若改动了依赖（<code>requirements.txt</code>），这里会拒绝自动更新，需手动执行
+          <code>git pull &amp;&amp; docker compose up -d --build</code>。
         </div>
       </div>
       <button class="btn btn-primary" onclick="saveAdvanced()">&darr;保存</button>
@@ -870,6 +919,8 @@ function applyConfigToUI() {
   safeCheck('adv-ai-device-filter',cfg.ai_device_filter!==false);
   safeSet('adv-ai-fallback',cfg.ai_fallback||'native');
   safeSet('adv-ai-fallback-text',cfg.ai_fallback_text||'抱歉，我没听懂这个指令，请换个说法。');
+  safeSet('adv-update-repo',cfg.update_repo||'chenshuhe/xiaoai-ha-bridge');
+  safeSet('adv-update-proxy',cfg.update_proxy||'');
   toggleFallbackText();toggleContextFields();
 }
 
@@ -924,7 +975,45 @@ function showLoad(on){document.getElementById('ctrl-loading').classList.toggle('
 // （POST /api/config 是整份覆盖）。展开后 password 的掩码由后端还原成真值。
 async function saveXiaomi(){cfg.xiaomi={...(cfg.xiaomi||{}),hardware:gv('mi-hardware'),device_did:gv('mi-did'),tts_reply:document.getElementById('mi-tts').checked};await saveCfg('xiaomi')}
 async function saveHA(){cfg.homeassistant={url:gv('ha-url'),token:gv('ha-token')};await saveCfg('ha')}
-async function saveAdvanced(){cfg.poll_interval_seconds=parseInt(gv('adv-interval'))||2;cfg.ai_mode=document.getElementById('adv-ai-mode').checked;cfg.openai={api_base:gv('adv-ai-base')||'https://api.openai.com',api_key:gv('adv-ai-key'),model:gv('adv-ai-model')||'gpt-4o-mini'};cfg.ai_context_enabled=document.getElementById('adv-ai-context').checked;cfg.ai_context_turns=parseInt(gv('adv-ai-context-turns'))||4;cfg.ai_clarify_enabled=document.getElementById('adv-ai-clarify').checked;cfg.ai_clarify_ttl=parseInt(gv('adv-ai-clarify-ttl'))||30;cfg.ai_device_filter=document.getElementById('adv-ai-device-filter').checked;cfg.ai_fallback=gv('adv-ai-fallback')||'native';cfg.ai_fallback_text=gv('adv-ai-fallback-text')||'抱歉，我没听懂这个指令，请换个说法。';await saveCfg('adv')}
+async function saveAdvanced(){cfg.poll_interval_seconds=parseInt(gv('adv-interval'))||2;cfg.ai_mode=document.getElementById('adv-ai-mode').checked;cfg.openai={api_base:gv('adv-ai-base')||'https://api.openai.com',api_key:gv('adv-ai-key'),model:gv('adv-ai-model')||'gpt-4o-mini'};cfg.ai_context_enabled=document.getElementById('adv-ai-context').checked;cfg.ai_context_turns=parseInt(gv('adv-ai-context-turns'))||4;cfg.ai_clarify_enabled=document.getElementById('adv-ai-clarify').checked;cfg.ai_clarify_ttl=parseInt(gv('adv-ai-clarify-ttl'))||30;cfg.ai_device_filter=document.getElementById('adv-ai-device-filter').checked;cfg.ai_fallback=gv('adv-ai-fallback')||'native';cfg.ai_fallback_text=gv('adv-ai-fallback-text')||'抱歉，我没听懂这个指令，请换个说法。';cfg.update_repo=gv('adv-update-repo')||'chenshuhe/xiaoai-ha-bridge';cfg.update_proxy=gv('adv-update-proxy');await saveCfg('adv')}
+
+// ── 版本更新 ──
+async function checkUpdate(){
+  const s=document.getElementById('update-status'),b=document.getElementById('btn-apply-update');
+  s.style.color='var(--txt-muted)';s.textContent='⟳ 正在检查…';b.style.display='none';
+  try{
+    const d=await(await fetch('/api/update/check')).json();
+    if(!d.ok){s.style.color='var(--red)';s.textContent='✗ '+(d.msg||'检查失败');return}
+    if(!d.has_update){s.style.color='var(--green)';s.textContent='✓ 已是最新版本 v'+d.current;return}
+    let t='⬆ 发现新版本 v'+d.latest+'（当前 v'+d.current+'）';
+    if(d.dep_changed===true){s.style.color='var(--orange)';t+=' · 依赖有变化，需手动 git pull && docker compose up -d --build'}
+    else if(d.dep_changed===null){s.style.color='var(--orange)';t+=' · 没能确认依赖是否变化（网络不稳），请重试或手动更新'}
+    else if(!d.mounted){s.style.color='var(--orange)';t+=' · 当前部署未挂载代码，需手动更新'}
+    else{s.style.color='var(--accent)';b.style.display=''}
+    s.textContent=t;
+  }catch(e){s.style.color='var(--red)';s.textContent='✗ '+e.message}
+}
+async function applyUpdateRemote(){
+  const s=document.getElementById('update-status'),b=document.getElementById('btn-apply-update');
+  if(!confirm('将下载新版 bridge.py 与 index.html 覆盖本地并重启桥接器。\n（会先备份，失败自动回滚）\n\n继续？'))return;
+  b.disabled=true;s.style.color='var(--txt-muted)';s.textContent='⟳ 下载并校验中…';
+  try{
+    const r=await fetch('/api/update/apply',{method:'POST'});
+    const d=await r.json();
+    if(!d.restart){s.style.color=d.ok?'var(--green)':'var(--red)';s.textContent=(d.ok?'✓ ':'✗ ')+(d.msg||(d.detail||''));b.disabled=false;return}
+    s.style.color='var(--accent)';s.textContent='✓ '+(d.msg||'正在重启…')+' 等待重启完成…';
+    // 轮询到版本号变化或超时
+    const target=d.latest;let waited=0;
+    const t=setInterval(async()=>{
+      waited+=2;
+      try{
+        const v=await(await fetch('/api/version')).json();
+        if(v.version===target){clearInterval(t);s.style.color='var(--green)';s.textContent='✓ 已更新到 v'+v.version+'，请刷新页面';b.style.display='none';return}
+      }catch(e){/* 重启期间接口会短暂不可用 */}
+      if(waited>=60){clearInterval(t);s.style.color='var(--orange)';s.textContent='⚠ 等待超时，请手动刷新页面确认版本';b.disabled=false}
+    },2000);
+  }catch(e){s.style.color='var(--orange)';s.textContent='⚠ 连接中断（可能正在重启），刷新页面后确认版本';b.disabled=false}
+}
 async function saveRules(){collectRulesFromUI();await saveCfg('rules')}
 async function saveCfg(sec){const map={xiaomi:'xiaomi-alert',ha:'ha-alert',rules:'rules-alert',adv:'adv-alert'};const a=document.getElementById(map[sec]||'dash-alert');try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:cfg})});const d=await r.json();showAlert(a,d.ok?'ok':'err',(d.ok?'✓ ':'✗ ')+(d.ok?'保存成功':'保存失败'))}catch(e){showAlert(a,'err','✗ '+e.message)}setTimeout(()=>a.classList.remove('show'),3000)}
 
@@ -933,8 +1022,72 @@ async function qrLogin(){const a=document.getElementById('xiaomi-alert');showAle
 async function pollQrLogin(){try{const r=await fetch('/api/qr/poll');const d=await r.json();if(d.done){clearInterval(qrPollTimer);document.getElementById('qr-status').textContent=d.msg;document.getElementById('qr-area').style.display='none';const a=document.getElementById('xiaomi-alert');showAlert(a,'ok','✓ '+d.msg);searchDevices()}else if(!d.ok){document.getElementById('qr-status').textContent=d.msg||'错误'}}catch(e){}}
 
 // ═══════════ Devices ═══════════
-async function loadDevices(){const a=document.getElementById('devices-alert');try{const[dr,ar]=await Promise.all([fetch('/api/devices'),fetch('/api/aliases')]);const dd=await dr.json();const ad=await ar.json();deviceAliases=ad.aliases||{};if(!dd.ok){showAlert(a,'err',dd.msg);return}document.getElementById('device-count').textContent=dd.count+'个';const list=document.getElementById('device-list');const dn={light:'💡灯光',switch:'🔌开关',climate:'🌡️空调',scene:'🎬场景',media_player:'📺媒体',script:'⚡脚本',automation:'🤖自动化',input_boolean:'🔘虚拟',fan:'🌀风扇',cover:'🪟窗帘',lock:'🔒门锁',vacuum:'🧹扫地'};list.innerHTML=dd.devices.map(d=>{const al=deviceAliases[d.entity_id]||'';return'<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">'+escHtml(d.name)+'</div><div class="device-meta">'+escHtml(d.entity_id)+' <span class="domain-tag">['+(dn[d.domain]||d.domain)+']</span></div></div><input class="alias-in" value="'+escHtml(al)+'" placeholder="别名" onchange="saveAlias(\''+escAttr(d.entity_id)+'\',this.value)"></div></div>'}).join('')}catch(e){showAlert(a,'err','加载失败: '+e.message)}}
-async function saveAlias(eid,alias){await fetch('/api/aliases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entity_id:eid,alias:alias.trim()})});deviceAliases[eid]=alias.trim()}
+// 设备管理：类型侧栏 + 搜索过滤 + 列表
+const DEV_DOMAINS={light:'💡灯光',climate:'🌡️空调',switch:'🔌开关',cover:'🪟窗帘',fan:'🌀风扇',media_player:'📺媒体',scene:'🎬场景',automation:'🤖自动化',script:'⚡脚本',vacuum:'🧹扫地',lock:'🔒门锁',button:'🔘按键',input_boolean:'🔘虚拟'};
+const DEV_ORDER=Object.keys(DEV_DOMAINS);
+let deviceCache=[],deviceTypeFilter='all';
+
+async function loadDevices(){
+  const a=document.getElementById('devices-alert');
+  try{
+    const[dr,ar]=await Promise.all([fetch('/api/devices'),fetch('/api/aliases')]);
+    const dd=await dr.json(),ad=await ar.json();
+    deviceAliases=ad.aliases||{};
+    if(!dd.ok){showAlert(a,'err',dd.msg);return}
+    deviceCache=dd.devices||[];
+    renderDeviceTypes();renderDeviceItems();
+  }catch(e){showAlert(a,'err','加载失败: '+e.message)}
+}
+
+function renderDeviceTypes(){
+  const counts={};
+  deviceCache.forEach(d=>{counts[d.domain]=(counts[d.domain]||0)+1});
+  const rank=d=>{const i=DEV_ORDER.indexOf(d);return i<0?99:i};
+  const doms=Object.keys(counts).sort((x,y)=>rank(x)-rank(y)||x.localeCompare(y));
+  let h='<div class="dev-type'+(deviceTypeFilter==='all'?' active':'')+'" onclick="selectDeviceType(\'all\')"><span>全部</span><b>'+deviceCache.length+'</b></div>';
+  doms.forEach(d=>{
+    h+='<div class="dev-type'+(deviceTypeFilter===d?' active':'')+'" onclick="selectDeviceType(\''+d+'\')"><span>'+(DEV_DOMAINS[d]||d)+'</span><b>'+counts[d]+'</b></div>';
+  });
+  document.getElementById('device-types').innerHTML=h;
+}
+
+function selectDeviceType(d){deviceTypeFilter=d;renderDeviceTypes();renderDeviceItems()}
+
+function renderDeviceItems(){
+  const q=(document.getElementById('device-search').value||'').trim().toLowerCase();
+  const list=document.getElementById('device-list');
+  const items=deviceCache.filter(d=>{
+    if(deviceTypeFilter!=='all'&&d.domain!==deviceTypeFilter)return false;
+    if(!q)return true;
+    const al=deviceAliases[d.entity_id];
+    const alTxt=Array.isArray(al)?al.join(' '):(al||'');
+    return (d.name||'').toLowerCase().includes(q)||(d.entity_id||'').toLowerCase().includes(q)||alTxt.toLowerCase().includes(q);
+  });
+  const filtering=deviceTypeFilter!=='all'||!!q;
+  document.getElementById('device-count').innerHTML='共 <b style="color:var(--txt-secondary)">'+deviceCache.length+
+    '</b> 个设备 · 已配别名 <em id="alias-count">'+Object.keys(deviceAliases).length+'</em> 个'+
+    (filtering?' · 当前显示 '+items.length+' 个':'');
+  if(!items.length){
+    list.innerHTML='<div class="empty-state">没有匹配的设备<br><span style="font-size:11px">换个关键词，或点左侧「全部」</span></div>';
+    return;
+  }
+  list.innerHTML=items.map(d=>{
+    const al=deviceAliases[d.entity_id];
+    const alStr=Array.isArray(al)?al.join('、'):(al||'');
+    return '<div class="rule-item'+(alStr?' has-alias':'')+'"><div class="device-item"><div class="device-info"><div class="device-name">'+escHtml(d.name)+'</div><div class="device-meta">'+escHtml(d.entity_id)+' <span class="domain-tag">['+(DEV_DOMAINS[d.domain]||d.domain)+']</span></div></div><input class="alias-in" data-orig="'+escAttr(alStr)+'" value="'+escHtml(alStr)+'" placeholder="别名" onchange="saveAlias(this,\''+escAttr(d.entity_id)+'\')"></div></div>';
+  }).join('');
+}
+
+async function saveAlias(input,eid){
+  const v=input.value.trim();
+  // 值没变就不提交：别名可能配了多个（列表），无脑回写会把列表压成单个字符串
+  if(v===(input.dataset.orig||''))return;
+  await fetch('/api/aliases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entity_id:eid,alias:v})});
+  if(v)deviceAliases[eid]=v;else delete deviceAliases[eid];
+  input.dataset.orig=v;
+  const row=input.closest('.rule-item');if(row)row.classList.toggle('has-alias',!!v);
+  const c=document.getElementById('alias-count');if(c)c.textContent=Object.keys(deviceAliases).length;
+}
 
 // ═══════════ Schedules ═══════════
 async function loadSchedules(){const a=document.getElementById('schedules-alert');try{const r=await fetch('/api/automations');const d=await r.json();if(!d.ok){showAlert(a,'err',d.msg);return}document.getElementById('schedule-count').textContent=d.count+'个';const list=document.getElementById('schedule-list');if(!d.automations.length){list.innerHTML='<div class="empty-state">暂无<br><span style="font-size:11px">对小爱说「每天七点半打开热水器」</span></div>';return}list.innerHTML=d.automations.map(s=>{const name=escHtml(s.alias||s.entity_id);const eid=escHtml(s.entity_id);const id=s.entity_id.replace('automation.','');const st=s.state==='on';const last=s.last_triggered?new Date(s.last_triggered).toLocaleString('zh-CN'):'从未';return'<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">'+name+'</div><div class="device-meta">'+eid+'</div><div style="font-size:10px;color:var(--txt-dim);margin-top:2px">上次: '+last+'</div></div><div style="display:flex;align-items:center;gap:10px"><span class="schedule-state '+(st?'on':'off')+'">'+(st?'启用':'禁用')+'</span><button class="rule-del" onclick="deleteSchedule(\''+escAttr(id)+'\')">✕</button></div></div></div>'}).join('')}catch(e){showAlert(a,'err','加载失败: '+e.message)}}

@@ -8,11 +8,11 @@ Web 配置版 | 端口 47521
 """
 
 import asyncio
-
 import json
 import logging
 import os
 import re
+import shutil
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.11.1"
+VERSION = "3.11.2"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -135,6 +135,9 @@ def _default_config() -> dict:
         "ai_clarify_enabled": True,     # 缺关键信息时反问
         "ai_clarify_ttl": 30,           # 待澄清问题有效期（秒）
         "ai_device_filter": True,       # 首轮用精简设备清单（miss 时自动全量重试）
+        # ── 版本更新 ──
+        "update_repo": "chenshuhe/xiaoai-ha-bridge",
+        "update_proxy": "",             # 访问 GitHub 的代理，形如 http://代理地址:端口（留空=直连）
         "device_aliases": {},
         "event_monitors": [],
         "poll_interval_seconds": 2,
@@ -2883,6 +2886,187 @@ async def tts_speak(req: TTSRequest):
     except Exception as e:
         log.error("TTS 播报失败: %s", e)
         raise HTTPException(500, f"TTS 播报失败: {e}")
+
+
+# ──────────────── 版本更新 ────────────────
+# 从 GitHub 直接拉取文件覆盖本地（不走 git：容器里没有 git，也没挂载 .git）。
+# 前提是 compose 把 bridge.py / web 挂载进了容器，否则写进去的只是容器层，重建就没了。
+
+_UPDATE_RAW = "https://raw.githubusercontent.com/{repo}/master/{path}"
+_UPDATE_FILES = ("bridge.py", "web/index.html")
+
+
+def _parse_version(v: str) -> tuple:
+    """'3.11.1' → (3, 11, 1)，非数字部分忽略"""
+    nums = [int(x) for x in re.findall(r"\d+", v or "")][:3]
+    return tuple(nums + [0] * (3 - len(nums)))
+
+
+def _code_is_mounted() -> bool:
+    """代码文件是否通过 bind mount 挂进容器。
+
+    没挂载的话覆盖 /app/bridge.py 只是改了容器可写层，docker compose 一重建就丢，
+    所以这种情况必须让用户走手动更新。
+    """
+    try:
+        with open("/proc/mounts", encoding="utf-8", errors="replace") as f:
+            return any(len(p := line.split()) > 1 and p[1] == "/app/bridge.py"
+                       for line in f)
+    except Exception:
+        return False
+
+
+def _norm_requirements(text: str) -> list[str]:
+    """去掉注释/空行/版本号后的依赖名集合，避免格式差异造成误判"""
+    out = set()
+    for line in (text or "").splitlines():
+        line = line.split("#")[0].strip()
+        if line:
+            out.add(re.split(r"[<>=!~\[;]", line)[0].strip().lower())
+    return sorted(out)
+
+
+async def _fetch_remote(cfg: dict, path: str) -> str | None:
+    """下载仓库 master 分支上的文件（走 update_proxy）"""
+    repo = (cfg.get("update_repo") or "").strip() or "chenshuhe/xiaoai-ha-bridge"
+    url = _UPDATE_RAW.format(repo=repo, path=path)
+    proxy = (cfg.get("update_proxy") or "").strip() or None
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url, proxy=proxy,
+                             timeout=aiohttp.ClientTimeout(total=30)) as r:
+                if r.status != 200:
+                    log.warning("更新: %s 返回 HTTP %s", url, r.status)
+                    return None
+                return await r.text()
+    except Exception as e:
+        log.warning("更新: 下载 %s 失败: %s", url, e)
+        return None
+
+
+async def _check_update(cfg: dict) -> dict:
+    """比对本地与远端版本，并判断能否自动更新"""
+    current = VERSION
+    remote = await _fetch_remote(cfg, "bridge.py")
+    if not remote:
+        return {"ok": False, "current": current,
+                "msg": "无法访问 GitHub，请检查网络或在下方填写代理"}
+    m = re.search(r'^VERSION\s*=\s*"([^"]+)"', remote, re.M)
+    if not m:
+        return {"ok": False, "current": current,
+                "msg": "远端 bridge.py 未找到 VERSION，仓库可能已变更"}
+
+    latest = m.group(1)
+    has_update = _parse_version(latest) > _parse_version(current)
+
+    # 依赖变化的话，光换代码文件不够，必须重建镜像。
+    # 注意这里是三态：True / False / None(没能确认)。
+    # 拉不到远端 requirements.txt 时必须当"未知"而不是"没变"——
+    # 万一真加了依赖，更新完容器会因 ImportError 起不来，那比不更新糟得多。
+    dep_changed: bool | None = None
+    remote_req = await _fetch_remote(cfg, "requirements.txt")
+    if remote_req is not None:
+        try:
+            local_req = Path("requirements.txt").read_text(encoding="utf-8")
+            dep_changed = _norm_requirements(remote_req) != _norm_requirements(local_req)
+        except Exception as e:
+            log.warning("更新: 读取本地 requirements.txt 失败: %s", e)
+            dep_changed = None
+
+    return {"ok": True, "current": current, "latest": latest,
+            "has_update": has_update, "dep_changed": dep_changed,
+            "mounted": _code_is_mounted()}
+
+
+@app.get("/api/update/check")
+async def update_check():
+    return await _check_update(load_config())
+
+
+@app.post("/api/update/apply")
+async def update_apply():
+    """下载新版覆盖本地，然后让进程退出交给 Docker 拉起。
+
+    任何一步失败都不动现有文件；写入过程中出错则从备份回滚。
+    """
+    cfg = load_config()
+    info = await _check_update(cfg)
+    if not info.get("ok"):
+        raise HTTPException(400, info.get("msg", "检查更新失败"))
+    if not info.get("has_update"):
+        return {"ok": True, "restart": False, "msg": f"已是最新版本 v{info['current']}"}
+    if not info.get("mounted"):
+        raise HTTPException(400, "当前部署未把代码挂载进容器，无法自动更新。"
+                                 "请手动执行：git pull && docker compose up -d --build")
+    # 只有"确认过依赖没变"才允许自动更新；True 或 None(未确认) 都拒绝
+    dep = info.get("dep_changed")
+    if dep is True:
+        raise HTTPException(400, "新版本的依赖有变化，自动更新装不了依赖。"
+                                 "请手动执行：git pull && docker compose up -d --build")
+    if dep is None:
+        raise HTTPException(400, "没能确认新版本的依赖是否变化（网络或代理不稳定），"
+                                 "为免更新后起不来，已中止。请稍后重试，或手动执行："
+                                 "git pull && docker compose up -d --build")
+
+    latest = info["latest"]
+
+    # 1) 下载并预校验
+    staged: dict[str, str] = {}
+    for rel in _UPDATE_FILES:
+        content = await _fetch_remote(cfg, rel)
+        if not content:
+            raise HTTPException(400, f"下载 {rel} 失败，已中止（未改动任何文件）")
+        staged[rel] = content
+
+    new_py = staged["bridge.py"]
+    if not re.search(rf'^VERSION\s*=\s*"{re.escape(latest)}"', new_py, re.M):
+        raise HTTPException(400, "下载内容与预期版本不符，已中止")
+    if "FastAPI" not in new_py or "bridge_loop" not in new_py:
+        raise HTTPException(400, "下载内容不像本项目的 bridge.py，已中止")
+
+    # 语法校验：临时写一份编译，过了才敢覆盖线上文件
+    import py_compile
+    import tempfile
+    tmpdir = tempfile.mkdtemp(prefix="xiaoai-update-")
+    try:
+        cand = Path(tmpdir) / "candidate.py"
+        cand.write_text(new_py, encoding="utf-8")
+        py_compile.compile(str(cand), cfile=str(Path(tmpdir) / "c.pyc"), doraise=True)
+    except py_compile.PyCompileError as e:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise HTTPException(400, f"下载的 bridge.py 语法校验失败，已中止：{str(e.msg)[:150]}")
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+    html = staged["web/index.html"]
+    if "<html" not in html.lower() or "</html>" not in html.lower():
+        raise HTTPException(400, "下载的 index.html 内容异常，已中止")
+
+    # 2) 备份 + 覆盖。用写入而非替换，保持 inode 不变，bind mount 才认得出
+    backups: list[tuple[Path, Path]] = []
+    try:
+        for rel in _UPDATE_FILES:
+            p = Path(rel)
+            bak = p.with_name(p.name + f".pre-{VERSION}.bak")
+            if p.exists():
+                shutil.copy2(p, bak)
+                backups.append((p, bak))
+        for rel, content in staged.items():
+            Path(rel).write_text(content, encoding="utf-8")
+    except Exception as e:
+        for p, bak in backups:
+            try:
+                shutil.copy2(bak, p)
+            except Exception:
+                pass
+        log.error("更新写入失败，已尝试回滚: %s", e)
+        raise HTTPException(500, f"写入失败，已回滚到 v{VERSION}：{e}")
+
+    log.info("已更新到 v%s，进程即将退出，由 Docker 重启", latest)
+    # 等响应发出去再退出；restart: unless-stopped 会把容器拉起来
+    asyncio.get_running_loop().call_later(1.5, os._exit, 0)
+    return {"ok": True, "restart": True, "latest": latest,
+            "msg": f"已更新到 v{latest}，正在重启…"}
 
 
 # ──────────────── 启动 ────────────────

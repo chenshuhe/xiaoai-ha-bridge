@@ -52,6 +52,45 @@ sudo systemctl enable --now xiaoai-ha-bridge@$USER
 
 ---
 
+## 更新
+
+### 网页一键更新（推荐）
+
+配置面板 → **高级设置** → **版本更新** → 点「检查更新」，有新版本会出现「立即更新」按钮。
+
+点击后桥接器会从 GitHub 拉取最新的 `bridge.py` 与 `web/index.html`，**先备份、再校验语法**，
+通过后覆盖并自动重启。整个过程约 10 秒，失败会自动回滚。
+
+前提是代码通过 bind mount 挂进了容器（仓库自带的 `docker-compose.yml` 已经是这样）。
+**如果服务器访问 GitHub 需要代理**，在同一个卡片里填「GitHub 代理」。
+
+以下情况会自动拒绝并提示手动更新：
+
+- 新版本改动了依赖（`requirements.txt`）—— 自动更新装不了依赖
+- 没能确认依赖是否变化（网络不稳）—— 宁可不更新，也不能更新完起不来
+- 部署方式没挂载代码文件
+
+### 手动更新
+
+```bash
+cd xiaoai-ha-bridge
+git pull
+docker compose restart
+```
+
+因为 `bridge.py` 和 `web/` 是挂载进容器的，`git pull` 后重启即可生效，不必重建镜像。
+
+不过**依赖有变化时必须重建**：
+
+```bash
+git pull && docker compose up -d --build
+```
+
+> 注意 `docker compose restart` 不会重读 `docker-compose.yml`。
+> 如果你改过 compose 文件（比如加了挂载），要用 `docker compose up -d` 才会生效。
+
+---
+
 ## 配置指南
 
 打开 `http://<服务器IP>:47521`，按顺序完成三步配置：
