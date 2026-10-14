@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.11.4"
+VERSION = "3.11.5"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -768,6 +768,10 @@ async def bridge_loop():
                     # 跳过音乐播放类指令——由 xiaomusic 处理
                     _music_kw = ["播放本地歌曲", "播放音乐", "播放歌曲", "下一首", "上一首",
                                  "暂停音乐", "继续播放", "本地音乐", "开始播放", "停止播放"]
+                    # 记一笔"用户想放音乐"。澄清反问会打断播放，之后该不该恢复全靠这个判断
+                    # （音箱接口分不清"小爱在说话"和"音乐在放"，盲目恢复会突然放起歌来）
+                    if _looks_like_music(query):
+                        _mark_music_requested()
                     if any(kw in query for kw in _music_kw):
                         log.info("🎵 音乐指令由 xiaomusic 处理，跳过 HA 桥")
                         continue
@@ -2347,6 +2351,28 @@ async def _wait_until_silent(na, device_id: str, timeout: float = 8.0) -> bool:
     return False
 
 
+# 最近一次"用户要求放音乐"的时间。
+# player_play 恢复的是"上一次播放过的媒体"，而音箱接口分不清"小爱在说话"和"音乐在放"，
+# 所以没放歌时盲目恢复会突然放起歌来。用这个时间戳当闸门：只有刚点过音乐才允许恢复。
+_music_requested_ts: float = 0.0
+_MUSIC_HINT_WINDOW = 3 * 3600.0        # 3 小时内点过音乐就认为可能在放
+_MUSIC_HINT_KW = ("音乐", "歌曲", "首歌", "歌单", "下一首", "上一首", "播放本地", "单曲")
+
+
+def _looks_like_music(text: str) -> bool:
+    return any(k in (text or "") for k in _MUSIC_HINT_KW)
+
+
+def _mark_music_requested() -> None:
+    global _music_requested_ts
+    _music_requested_ts = time.time()
+
+
+def _resume_allowed() -> bool:
+    """是否允许播报结束后恢复播放。只认"用户确实点过音乐"，宁可少恢复也不误放。"""
+    return (time.time() - _music_requested_ts) < _MUSIC_HINT_WINDOW
+
+
 async def _playback_status(na, device_id: str):
     """当前播放状态：1=在播、3=空闲、2=已停。取不到返回 None。"""
     try:
@@ -2428,6 +2454,10 @@ async def _speak(na, device_id: str, text: str, *,
     stopped_something = False
     if interrupt:
         stopped_something = await _stop_playback(na, device_id)
+        if stopped_something and not _resume_allowed():
+            # 近期没点过音乐 → 打断的多半就是小爱自己的那句回答，
+            # 不能恢复（player_play 会把上一次的媒体放出来，用户会莫名其妙听到歌）
+            stopped_something = False
     elif wait_silent:
         await _wait_until_silent(na, device_id)
     for attempt in (1, 2):
