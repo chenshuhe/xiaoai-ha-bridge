@@ -3,6 +3,12 @@ config/auth.json
 config/.mi.token
 config/config.yaml
 
+# 运行时状态（每 2 秒变一次，入库会让工作区永远是脏的）
+config/last_timestamp.json
+
+# 本地备份（手改代码前的快照，切勿入库）
+*.bak
+
 # Python
 __pycache__/
 *.pyc

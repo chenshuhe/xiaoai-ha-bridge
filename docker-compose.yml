@@ -6,8 +6,10 @@ services:
     ports:
       - "47521:47521"       # Web 配置面板
     volumes:
+      - ./bridge.py:/app/bridge.py
       - ./config:/app/config
       - ./logs:/app/logs
+      - ./web:/app/web
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
