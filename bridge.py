@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.11.2"
+VERSION = "3.11.3"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -743,10 +743,7 @@ async def bridge_loop():
                         if _is_cancel(query):
                             log.info("🚫 用户取消澄清: %s", query)
                             if mi_cfg.get("tts_reply", True):
-                                try:
-                                    await na.text_to_speech(device_id, "好的")
-                                except Exception:
-                                    pass
+                                await _speak(na, device_id, "好的", interrupt=True)
                             continue
                         clar_actions, _ = await _resolve_clarification(pending, query, rt_cfg)
                         if clar_actions:
@@ -783,11 +780,10 @@ async def bridge_loop():
                     # 信息不足 → 反问，并记下待答状态
                     if diag.get("clarify"):
                         c = diag["clarify"]
+                        # 澄清场景**必然**和小爱的原生回答撞车（它会先说一句"没有发现…"）。
+                        # 那句是废话，直接打断再反问，否则等它说完要 5-6 秒
                         if not forced and mi_cfg.get("tts_reply", True):
-                            try:
-                                await na.text_to_speech(device_id, c["question"])
-                            except Exception:
-                                pass
+                            await _speak(na, device_id, c["question"], interrupt=True)
                         await _conversation.set_pending({
                             "question": c["question"],
                             "candidates": c["candidates"],
@@ -2329,6 +2325,87 @@ _META_KEYS = {"domain", "service", "reply", "delay_minutes", "type",
               "schedule_time", "schedule_days", "action", "clarify", "reason"}
 
 
+async def _wait_until_silent(na, device_id: str, timeout: float = 8.0) -> bool:
+    """等小爱把当前这句说完。player_get_status 里 status==3 空闲、1 正在播。
+
+    没这一步的话，桥接器的播报会和"小爱自己的回答"撞车——实测撞车时
+    remote/ubus 会被阻塞好几秒，然后语音被丢掉（用户什么也听不到）。
+    查状态失败时不阻塞，直接放行。
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            resp = await na.player_get_status(device_id)
+            info = ((resp or {}).get("data") or {}).get("info") or ""
+            status = json.loads(info).get("status") if info else None
+            if status != 1:
+                return True
+        except Exception:
+            return True
+        await asyncio.sleep(0.6)
+    log.warning("等待小爱静音超时（%.0fs），仍继续播报", timeout)
+    return False
+
+
+async def _stop_playback(na, device_id: str) -> bool:
+    """打断小爱当前正在播的内容（只在真的在播时才动手）。
+
+    澄清场景下小爱总会先说一句"没有发现可以操作的空调…"，等它说完要 5-6 秒；
+    直接打断可以让反问基本立刻响起。
+
+    ⚠ 这个 stop 用的 media 参数是 app_ios，但实测它能停掉 mibrain 发出的 TTS，
+    所以**不排除也会停掉正在播放的音乐**。只在"刚发生一轮语音交互"时调用，
+    降低误伤概率。
+    """
+    try:
+        resp = await na.player_get_status(device_id)
+        info = ((resp or {}).get("data") or {}).get("info") or ""
+        status = json.loads(info).get("status") if info else None
+        if status != 1:
+            return False                    # 没在播，不需要打断
+        await na.player_stop(device_id)
+        await asyncio.sleep(0.2)            # 给音箱一点反应时间
+        log.info("⏹ 已打断小爱当前播报，改播桥接器的内容")
+        return True
+    except Exception as e:
+        log.warning("打断播报失败（忽略，继续播报）: %s", e)
+        return False
+
+
+async def _speak(na, device_id: str, text: str, *,
+                 wait_silent: bool = False, interrupt: bool = False) -> bool:
+    """播报文字并**检查小米返回的业务码**。
+
+    miservice 的 ubus_request 不看业务码，HTTP 200 但语音被丢掉是可能的，
+    所以这里必须自己判 code，失败重试一次并留下日志——否则出问题完全无从查起。
+
+    interrupt=True 先打断小爱当前播报（快，但可能误停音乐）；
+    wait_silent=True 则等它说完（慢，约 5-8 秒，但绝对安全）。
+    """
+    if not text:
+        return False
+    if interrupt:
+        await _stop_playback(na, device_id)
+    elif wait_silent:
+        await _wait_until_silent(na, device_id)
+    for attempt in (1, 2):
+        try:
+            resp = await na.text_to_speech(device_id, text)
+            code = (resp or {}).get("code")
+            dcode = ((resp or {}).get("data") or {}).get("code")
+            if code == 0 and dcode in (0, None):
+                log.info("🎙️ TTS 播报: %s", text)
+                return True
+            log.warning("TTS 返回异常(第%d次): code=%s data.code=%s resp=%s",
+                        attempt, code, dcode, str(resp)[:200])
+        except Exception as e:
+            log.warning("TTS 请求异常(第%d次): %s", attempt, e)
+        if attempt == 1:
+            await asyncio.sleep(1.2)
+    log.error("⚠ TTS 播报失败（重试后仍不成）: %s", text)
+    return False
+
+
 async def _execute_actions(actions: list[dict], ha: "HAClient", na, session,
                            device_id: str = "", tts_reply: bool = False,
                            delayed_runner=None) -> list[dict]:
@@ -2380,10 +2457,7 @@ async def _execute_actions(actions: list[dict], ha: "HAClient", na, session,
                     tts = f"抱歉，第{idx+1}步操作失败了"
                 elif idx < len(actions) - 1:
                     tts += "，继续执行下一步"
-            try:
-                await na.text_to_speech(device_id, tts)
-            except Exception:
-                pass
+            await _speak(na, device_id, tts)
 
         results.append({"domain": domain, "service": service, "ok": ok,
                         "reply": reply, "kind": kind})
@@ -2476,10 +2550,7 @@ async def _handle_ai_fallback(query: str, cfg: dict, diag: dict, na,
         if generated:
             text = generated
     log.info("📢 兜底播报(%s): %s", mode, text)
-    try:
-        await na.text_to_speech(device_id, text)
-    except Exception:
-        pass
+    await _speak(na, device_id, text, interrupt=True)
 
 
 # ──────────────── QR 扫码登录（绕过短信验证） ────────────────
