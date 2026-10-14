@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.11.5"
+VERSION = "3.11.6"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -787,7 +787,12 @@ async def bridge_loop():
                         # 澄清场景**必然**和小爱的原生回答撞车（它会先说一句"没有发现…"）。
                         # 那句是废话，直接打断再反问，否则等它说完要 5-6 秒
                         if not forced and mi_cfg.get("tts_reply", True):
-                            await _speak(na, device_id, c["question"], interrupt=True)
+                            # 桥接器注入的 TTS 不会让小爱进入聆听状态（连续对话也一样，
+                            # 那窗口只在小爱自己那轮对话结束后开），所以必须明确告诉用户
+                            # 要再喊一次唤醒词——否则用户根本不知道该接话
+                            await _speak(na, device_id,
+                                         c["question"] + "请先说小爱同学。",
+                                         interrupt=True)
                         await _conversation.set_pending({
                             "question": c["question"],
                             "candidates": c["candidates"],
