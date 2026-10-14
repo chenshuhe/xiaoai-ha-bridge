@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.10.0"
+VERSION = "3.11.0"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -86,10 +86,6 @@ bridge_state = {
     "start_time": None,
     "pending_clarify": None,   # 正在等待用户回答的澄清问题
 }
-
-# 临时保存短信验证流程中的登录状态
-_pending_login: dict = {}
-_pending_session: aiohttp.ClientSession | None = None
 
 _bridge_task: asyncio.Task | None = None
 _bridge_session: aiohttp.ClientSession | None = None
@@ -422,6 +418,32 @@ def _get_cookie(cfg: dict) -> dict | None:
         return None
 
 
+def _has_xiaomi_credentials(cfg: dict) -> bool:
+    """是否具备可用的登录凭据（账号密码 / cookie_text / auth.json / .mi.token 任一）。
+
+    扫码登录只写 auth.json / .mi.token / cookie_text，不写账号密码，
+    所以不能用"账号密码非空"来判定用户是否完成配置。
+
+    口径有意收紧：落盘文件里**必须含非空 passToken** 才算数。
+    只有 deviceId 的 .mi.token 放行没有意义——_set_token 和登录尝试 1/2 都只认
+    passToken，提前放行只会把"配置错误"变成"运行期反复登录失败"。
+    """
+    mi = cfg.get("xiaomi") or {}
+    if (mi.get("username") or "") and (mi.get("password") or ""):
+        return True
+    if (mi.get("cookie_text") or "").strip():
+        return True
+    for path in (AUTH_PATH, TOKEN_PATH):
+        try:
+            if path.exists():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data.get("passToken"):
+                    return True
+        except Exception:
+            pass
+    return False
+
+
 async def _get_latest_ask_from_xiaoai(session: aiohttp.ClientSession, device_id: str,
                                       hardware: str, last_ts: int) -> tuple[list[dict], int, bool]:
     """HTTP API 方式获取最新对话（参考 xiaomusic get_latest_ask_from_xiaoai）
@@ -457,11 +479,13 @@ async def _get_latest_ask_from_xiaoai(session: aiohttp.ClientSession, device_id:
 async def bridge_loop():
     global _bridge_session
     cfg = load_config()
-    mi_cfg = cfg["xiaomi"]
-    ha_cfg = cfg["homeassistant"]
+    mi_cfg = cfg.get("xiaomi", {})
+    ha_cfg = cfg.get("homeassistant", {})
 
-    if not mi_cfg.get("username") or not mi_cfg.get("password"):
-        bridge_state["error"] = "小米账号未配置"
+    # 账号密码不再是必须的：扫码登录只留下 auth.json / .mi.token / cookie_text，
+    # 而 passToken 登录路径完全不依赖账号密码（见 miservice MiAccount.login）。
+    if not _has_xiaomi_credentials(cfg):
+        bridge_state["error"] = "小米账号未登录，请打开配置页扫码登录"
         bridge_state["running"] = False
         return
 
@@ -496,7 +520,7 @@ async def bridge_loop():
         from miservice.miaccount import get_random
 
         # ── 登录（三级尝试，参考 xiaomusic 的 passToken 注入绕过 SMS） ──
-        account = MiAccount(_bridge_session, mi_cfg["username"], mi_cfg["password"],
+        account = MiAccount(_bridge_session, mi_cfg.get("username") or "", mi_cfg.get("password") or "",
                            str(TOKEN_PATH) if TOKEN_PATH.parent.exists() else None)
         _set_token(account, cfg)
 
@@ -536,7 +560,7 @@ async def bridge_loop():
                                 pass
                         for domain in ['account.xiaomi.com', '.mina.mi.com']:
                             _bridge_session.cookie_jar.update_cookies(sc2, yarl.URL(f'https://{domain}/'))
-                        account2 = MiAccount(_bridge_session, mi_cfg["username"], mi_cfg["password"], str(TOKEN_PATH))
+                        account2 = MiAccount(_bridge_session, mi_cfg.get("username") or "", mi_cfg.get("password") or "", str(TOKEN_PATH))
                         account2.token = {
                             'deviceId': cookies.get('deviceId', get_random(16).upper()),
                             'userId': cookies['userId'],
@@ -955,8 +979,8 @@ async def _xiaomi_tts(text: str) -> bool:
     global _tts_na, _tts_na_session, _tts_device_id
     cfg = load_config()
     mi_cfg = cfg.get("xiaomi", {})
-    if not mi_cfg.get("username"):
-        log.error("事件监听 TTS 失败: 小米账号未配置")
+    if not _has_xiaomi_credentials(cfg):
+        log.error("事件监听 TTS 失败: 小米账号未登录，请扫码登录")
         return False
     async with _tts_lock:
         try:
@@ -971,8 +995,8 @@ async def _xiaomi_tts(text: str) -> bool:
                     token = json.loads(token_path.read_text())
                 else:
                     token = {"deviceId": get_random(16).upper()}
-                account = MiAccount(_tts_na_session, mi_cfg["username"],
-                                    mi_cfg.get("password", ""), str(token_path))
+                account = MiAccount(_tts_na_session, mi_cfg.get("username") or "",
+                                    mi_cfg.get("password") or "", str(token_path))
                 account.token = token
                 _tts_na = MiNAService(account)
 
@@ -1336,20 +1360,45 @@ async def test_xiaomi(req: TestXiaomiRequest):
     password = req.password
     cfg = load_config()
     mi = cfg.get("xiaomi", {})
-    if req.use_saved or not username or not password or password == "••••••••":
+    masked = "••••••••"
+    if req.use_saved or not username or not password or password == masked:
         if not username:
-            username = mi.get("username", "")
-        if not password or password == "••••••••":
-            password = mi.get("password", "")
-    if not username or not password:
-        return {"ok": False, "msg": "请先填写账号和密码"}
+            username = mi.get("username") or ""
+        if not password or password == masked:
+            password = mi.get("password") or ""
 
-    global _pending_session
-    if _pending_session and not _pending_session.closed:
-        await _pending_session.close()
+    # 账号密码不再是必须的：扫码登录只留下 cookie_text / auth.json / .mi.token。
+    # 三者都没有才拦下，否则一律继续尝试。
+    has_saved = bool((mi.get("cookie_text") or "").strip()) or _has_xiaomi_credentials(cfg)
+    if not (username and password) and not req.cookie_text and not has_saved:
+        return {"ok": False, "msg": "尚未登录，请先扫码登录"}
 
     try:
         from miservice.miaccount import get_random
+
+        # ── 方式0：已存 passToken（auth.json / .mi.token）──
+        # 顺序与 bridge_loop 的三级尝试保持一致：passToken → Cookie → 密码。
+        # 实测 store 里的 passToken 能登录成功，而 Cookie 分支可能因 serviceToken
+        # 缺失等原因失败，所以 passToken 必须排在前面。
+        try:
+            s0 = aiohttp.ClientSession()
+            try:
+                acct0 = MiAccount(s0, username, password, str(TOKEN_PATH))
+                _set_token(acct0, cfg)
+                if acct0.token.get("passToken"):
+                    log.info("尝试用已保存的 passToken 登录...")
+                    if await acct0.login("micoapi"):
+                        _save_auth_and_token(acct0)
+                        na0 = MiNAService(acct0)
+                        devices0 = await na0.device_list()
+                        if not devices0:
+                            return {"ok": True, "msg": "登录成功，但未发现小爱音箱设备", "devices": []}
+                        return {"ok": True, "msg": f"登录成功，发现 {len(devices0)} 台设备",
+                                "devices": devices0}
+            finally:
+                await s0.close()
+        except Exception as e:
+            log.warning("已存 passToken 登录失败: %s", e)
 
         # ── 方式1：浏览器 Cookie 直接登录 ──
         cookie_text = req.cookie_text or mi.get("cookie_text", "")
@@ -1399,6 +1448,9 @@ async def test_xiaomi(req: TestXiaomiRequest):
                     await cs.close()
 
         # ── 方式2：纯密码登录（不加载缓存 token，避免 passToken 干扰） ──
+        # 只有配置里本来就有账号密码的老用户才会走到这里
+        if not username or not password:
+            return {"ok": False, "msg": "已保存的凭据不可用，请重新扫码登录"}
         s = aiohttp.ClientSession()
         account = MiAccount(s, username, password, None)
         if not account.token or not isinstance(account.token, dict):
@@ -1427,37 +1479,12 @@ async def test_xiaomi(req: TestXiaomiRequest):
                 await s.close()
                 return {"ok": False, "msg": msg}
 
-        # 检查是否需要短信验证
+        # 需要短信验证：短信流程已随"只保留扫码"一并移除，这里给明确出路
         if resp.get('securityStatus', 0) & 16:
-            notif_url = resp.get('notificationUrl', '')
-            if not notif_url:
-                verify_url = "https://account.xiaomi.com"
-            elif notif_url.startswith("https://") or notif_url.startswith("http://"):
-                verify_url = notif_url
-            elif notif_url.startswith("https//"):
-                verify_url = notif_url.replace("https//", "https://", 1)
-            elif notif_url.startswith("//"):
-                verify_url = f"https:{notif_url}"
-            elif notif_url.startswith("/"):
-                verify_url = f"https://account.xiaomi.com{notif_url}"
-            else:
-                verify_url = f"https://account.xiaomi.com/{notif_url}"
-
-            _pending_login.update({
-                'ssecurity': resp.get('ssecurity', ''),
-                'nonce': resp.get('nonce', ''),
-                'location': resp.get('location', ''),
-                'userId': resp.get('userId', ''),
-                'passToken': resp.get('passToken', ''),
-                'username': username,
-                'password': password,
-            })
-            _pending_session = s
+            await s.close()
             return {
                 "ok": False,
-                "msg": "密码验证通过，但需要手机验证码确认。\n①复制下方链接在浏览器中打开 ②完成短信验证 ③将跳转后页面的完整 Cookie 粘贴到下方输入框",
-                "need_verify": True,
-                "verify_url": verify_url,
+                "msg": "该账号登录被要求短信验证，已不再支持。请改用「扫码登录」。",
             }
 
         # 登录成功
@@ -1486,126 +1513,6 @@ async def test_xiaomi(req: TestXiaomiRequest):
     except Exception as e:
         log.exception("test_xiaomi 异常: %s", e)
         return {"ok": False, "msg": f"请求失败: {e}"}
-
-
-class XiaomiVerifyRequest(BaseModel):
-    cookie_text: str = ""
-
-
-@app.post("/api/test/xiaomi/verify")
-async def xiaomi_verify(req: XiaomiVerifyRequest):
-    """处理短信验证回调：支持 STS URL 或浏览器 Cookie"""
-    global _pending_session
-    try:
-        from miservice import MiAccount, MiNAService
-    except ImportError:
-        return {"ok": False, "msg": "缺少依赖: pip install miservice"}
-
-    if not _pending_login.get('username'):
-        return {"ok": False, "msg": "请先点击「测试连接」触发验证流程"}
-
-    username = _pending_login['username']
-    password = _pending_login['password']
-    pending = dict(_pending_login)
-
-    if not req.cookie_text:
-        return {"ok": False, "msg": "请粘贴短信验证完成后的跳转 URL"}
-
-    # ── 方式A：短信验证回调 URL（自动获取 serviceToken）──
-    if req.cookie_text.startswith("https://api2.mina.mi.com/sts"):
-        log.info("检测到 STS 回调 URL，自动获取 serviceToken...")
-        s = aiohttp.ClientSession()
-        try:
-            # 用 pending session 的 cookies 请求 STS 端点
-            if _pending_session and not _pending_session.closed:
-                import yarl
-                for domain in ['account.xiaomi.com', '.mina.mi.com']:
-                    pending = _pending_session.cookie_jar.filter_cookies(yarl.URL(f'https://{domain}/'))
-                    s.cookie_jar.update_cookies(pending, yarl.URL(f'https://{domain}/'))
-            async with s.get(req.cookie_text, timeout=aiohttp.ClientTimeout(total=15)):
-                pass
-            sts_cookies = {k: v.value for k, v in
-                           s.cookie_jar.filter_cookies(yarl.URL('https://api2.mina.mi.com/')).items()}
-            service_token = sts_cookies.get('serviceToken', '')
-            if not service_token:
-                raise Exception("未从 STS 响应中获取到 serviceToken，请重试")
-            log.info("已获取 serviceToken: %s...", service_token[:30])
-        except Exception as e:
-            await s.close()
-            return {"ok": False, "msg": f"STS 请求失败: {e}"}
-
-        # 构造 token
-        from miservice.miaccount import get_random
-        account = MiAccount(s, username, password, str(TOKEN_PATH))
-        account.token = {
-            'deviceId': pending.get('deviceId', get_random(16).upper()),
-            'userId': pending.get('userId', ''),
-            'passToken': pending.get('passToken', ''),
-            'micoapi': (pending.get('ssecurity', ''), service_token),
-        }
-        _save_auth_and_token(account)
-        # 保存精简 cookie 到配置
-        simple_cookie = f"userId={account.token['userId']}; passToken={account.token['passToken']}; serviceToken={service_token}; deviceId={account.token['deviceId']}"
-        cfg = load_config()
-        cfg.setdefault("xiaomi", {})["cookie_text"] = simple_cookie
-        save_config(cfg)
-
-        na = MiNAService(account)
-        devices = await na.device_list()
-        await s.close()
-        _pending_login.clear()
-        _pending_session = None
-        if devices:
-            return {"ok": True, "msg": f"短信验证完成！发现 {len(devices)} 台设备", "devices": devices}
-        return {"ok": True, "msg": "短信验证完成，但未发现小爱音箱设备", "devices": []}
-
-    # ── 方式B：浏览器 Cookie ──
-    from http.cookies import SimpleCookie
-    sc = SimpleCookie()
-    sc.load(req.cookie_text)
-    cookies = {k: m.value for k, m in sc.items()}
-
-    if not cookies.get('userId'):
-        return {"ok": False, "msg": "未识别有效内容。请确认粘贴的是短信验证后的跳转 URL（以 https://api2.mina.mi.com/sts 开头）或完整 Cookie"}
-    if not cookies.get('passToken') or not cookies.get('serviceToken'):
-        return {"ok": False, "msg": "Cookie 缺少 passToken 或 serviceToken，请复制完整 Cookie"}
-
-    try:
-        if _pending_session and not _pending_session.closed:
-            await _pending_session.close()
-
-        s = aiohttp.ClientSession()
-        import yarl
-        sc2 = SimpleCookie()
-        for k, v in cookies.items():
-            try: sc2[k] = v
-            except Exception: pass
-        for domain in ['account.xiaomi.com', '.mina.mi.com']:
-            s.cookie_jar.update_cookies(sc2, yarl.URL(f'https://{domain}/'))
-
-        from miservice.miaccount import get_random
-        account = MiAccount(s, username, password, str(TOKEN_PATH))
-        account.token = {
-            'deviceId': cookies.get('deviceId', get_random(16).upper()),
-            'userId': cookies['userId'],
-            'passToken': cookies['passToken'],
-            'micoapi': ('', cookies['serviceToken']),
-        }
-        na = MiNAService(account)
-        devices = await na.device_list()
-        _save_auth_and_token(account)
-        cfg = load_config()
-        cfg.setdefault("xiaomi", {})["cookie_text"] = req.cookie_text
-        save_config(cfg)
-        await s.close()
-        _pending_login.clear()
-        _pending_session = None
-        if devices:
-            return {"ok": True, "msg": f"登录成功，发现 {len(devices)} 台设备", "devices": devices}
-        return {"ok": True, "msg": "登录成功，但未发现小爱音箱设备", "devices": []}
-    except Exception as e:
-        log.info(f"verify failed: {e}")
-        return {"ok": False, "msg": f"验证失败: {e}"}
 
 
 # ──────────────── HA 设备列表 ────────────────
@@ -2945,8 +2852,8 @@ async def tts_speak(req: TTSRequest):
     cfg = load_config()
     mi_cfg = cfg.get("xiaomi", {})
     
-    if not mi_cfg.get("username"):
-        raise HTTPException(400, "小米账号未配置")
+    if not _has_xiaomi_credentials(cfg):
+        raise HTTPException(400, "小米账号未登录，请打开配置页扫码登录")
     
     try:
         from miservice import MiAccount, MiNAService
@@ -2959,7 +2866,7 @@ async def tts_speak(req: TTSRequest):
             else:
                 token = {"deviceId": get_random(16).upper()}
             
-            account = MiAccount(session, mi_cfg["username"], mi_cfg.get("password", ""), str(token_path))
+            account = MiAccount(session, mi_cfg.get("username") or "", mi_cfg.get("password") or "", str(token_path))
             account.token = token
             
             na = MiNAService(account)

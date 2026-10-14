@@ -697,26 +697,19 @@ body{
       <div class="page-head"><div class="page-title"><span class="icon">&#9673;</span>小米账号</div><div class="page-desc">小米账号与小爱音箱设置</div></div>
       <div id="xiaomi-alert" class="alert"></div>
       <div class="card">
-        <div class="card-head"><div class="card-title"><span>&#9673;</span>登录信息</div></div>
-        <div class="form-grid">
-          <div class="field"><label>账号（手机号/邮箱）</label><input type="text" id="mi-username" placeholder="your@email.com"></div>
-          <div class="field"><label>密码</label><div class="input-row"><input type="password" id="mi-password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"><button class="btn" onclick="testXiaomi()">&#9889;测试</button><button class="btn btn-primary" onclick="qrLogin()">&#128247;扫码</button></div></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-head"><div class="card-title"><span>&#9673;</span>Cookie登录 <span style="color:var(--green);text-transform:none;font-weight:400;font-size:10px;letter-spacing:0">免短信</span></div></div>
+        <div class="card-head"><div class="card-title"><span>&#128247;</span>扫码登录</div></div>
         <div style="font-size:12px;color:var(--txt-muted);line-height:1.8;margin-bottom:10px">
-          浏览器已登录小米时直接复制 Cookie 跳过短信。<br>
-          ① 打开 <a href="https://account.xiaomi.com" target="_blank" style="color:var(--accent)">account.xiaomi.com</a><br>
-          ② <b style="color:var(--txt-secondary)">F12</b> &rarr; <b style="color:var(--txt-secondary)">Application</b> &rarr; <b style="color:var(--txt-secondary)">Cookies</b><br>
-          ③ 复制所有 Cookie（含 userId / passToken / serviceToken）<br>
-          ④ 粘贴下方 &rarr; 点「测试」
+          用<b style="color:var(--txt-secondary)">米家 App</b> 扫码即可登录，成功后自动保存 token，后续无需重复登录。<br>
+          token 失效时重新扫一次即可。
         </div>
-        <div class="field"><label>Cookie 文本</label><textarea id="mi-cookie-text" rows="2" placeholder="userId=xxx; passToken=xxx; serviceToken=xxx; ..."></textarea></div>
+        <div class="input-row"><button class="btn btn-primary" onclick="qrLogin()">&#128247;生成二维码</button></div>
+        <div class="qr-box" id="qr-area" style="display:none;margin-top:12px">
+          <div style="font-size:12px;color:var(--txt-muted);margin-bottom:8px" id="qr-msg">用米家App扫码</div>
+          <img id="qr-img" src="" style="width:170px;height:170px;border:2px solid var(--border-default);border-radius:var(--r-lg);background:#fff" alt="QR">
+          <div style="margin-top:6px;font-size:11px;color:var(--txt-dim)" id="qr-status"></div>
+        </div>
       </div>
-      <div id="mi-sts-card" class="card" style="display:none"><div class="card-head"><div class="card-title"><span>&#128241;</span>短信验证</div></div><div style="font-size:12px;color:var(--txt-muted);line-height:1.8">① 点击上方链接验证<br>② 成功后复制 Cookie 到上方输入框 &rarr; 测试</div></div>
       <div id="mi-device-list" class="card" style="display:none"><div class="card-head"><div class="card-title"><span>&#9670;</span>发现设备 <span id="mi-device-count" style="text-transform:none;font-weight:400;font-size:10px"></span></div></div><div id="mi-devices"></div></div>
-      <div class="card" id="qr-area" style="display:none"><div class="card-head"><div class="card-title"><span>&#128247;</span>扫码登录</div></div><div class="qr-box"><div style="font-size:12px;color:var(--txt-muted);margin-bottom:8px" id="qr-msg">用米家App扫码</div><img id="qr-img" src="" style="width:170px;height:170px;border:2px solid var(--border-default);border-radius:var(--r-lg);background:#fff" alt="QR"><div style="margin-top:6px;font-size:11px;color:var(--txt-dim)" id="qr-status"></div></div></div>
       <div class="card">
         <div class="card-head"><div class="card-title"><span>&#9881;</span>设备参数</div></div>
         <div class="form-grid">
@@ -854,7 +847,6 @@ async function loadConfig() {
 
 function applyConfigToUI() {
   const mi=cfg.xiaomi||{};const ha=cfg.homeassistant||{};
-  safeSet('mi-username',mi.username||'');safeSet('mi-password',mi.password||'');
   safeSet('mi-did',mi.device_did||'');safeCheck('mi-tts',mi.tts_reply!==false);
   safeSet('mi-hardware',mi.hardware||'');safeSet('ha-url',ha.url||'');safeSet('ha-token',ha.token||'');
   safeSet('adv-interval',cfg.poll_interval_seconds||2);
@@ -922,16 +914,17 @@ async function stopBridge(){showLoad(true);await fetch('/api/bridge/stop',{metho
 function showLoad(on){document.getElementById('ctrl-loading').classList.toggle('show',on)}
 
 // ═══════════ Save ═══════════
-async function saveXiaomi(){const o=cfg.xiaomi||{};cfg.xiaomi={username:gv('mi-username'),password:gv('mi-password'),hardware:gv('mi-hardware'),device_did:gv('mi-did'),tts_reply:document.getElementById('mi-tts').checked,cookie_text:o.cookie_text||''};await saveCfg('xiaomi')}
+// 基于旧对象展开：账号密码/Cookie 已不在界面上，重建对象会把它们清空
+// （POST /api/config 是整份覆盖）。展开后 password 的掩码由后端还原成真值。
+async function saveXiaomi(){cfg.xiaomi={...(cfg.xiaomi||{}),hardware:gv('mi-hardware'),device_did:gv('mi-did'),tts_reply:document.getElementById('mi-tts').checked};await saveCfg('xiaomi')}
 async function saveHA(){cfg.homeassistant={url:gv('ha-url'),token:gv('ha-token')};await saveCfg('ha')}
 async function saveAdvanced(){cfg.poll_interval_seconds=parseInt(gv('adv-interval'))||2;cfg.ai_mode=document.getElementById('adv-ai-mode').checked;cfg.openai={api_base:gv('adv-ai-base')||'https://api.openai.com',api_key:gv('adv-ai-key'),model:gv('adv-ai-model')||'gpt-4o-mini'};cfg.ai_context_enabled=document.getElementById('adv-ai-context').checked;cfg.ai_context_turns=parseInt(gv('adv-ai-context-turns'))||4;cfg.ai_clarify_enabled=document.getElementById('adv-ai-clarify').checked;cfg.ai_clarify_ttl=parseInt(gv('adv-ai-clarify-ttl'))||30;cfg.ai_device_filter=document.getElementById('adv-ai-device-filter').checked;cfg.ai_fallback=gv('adv-ai-fallback')||'native';cfg.ai_fallback_text=gv('adv-ai-fallback-text')||'抱歉，我没听懂这个指令，请换个说法。';await saveCfg('adv')}
 async function saveRules(){collectRulesFromUI();await saveCfg('rules')}
 async function saveCfg(sec){const map={xiaomi:'xiaomi-alert',ha:'ha-alert',rules:'rules-alert',adv:'adv-alert'};const a=document.getElementById(map[sec]||'dash-alert');try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:cfg})});const d=await r.json();showAlert(a,d.ok?'ok':'err',(d.ok?'✓ ':'✗ ')+(d.ok?'保存成功':'保存失败'))}catch(e){showAlert(a,'err','✗ '+e.message)}setTimeout(()=>a.classList.remove('show'),3000)}
 
 // ═══════════ Xiaomi ═══════════
-async function testXiaomi(){const a=document.getElementById('xiaomi-alert');if(!gv('mi-username')&&!(cfg.xiaomi||{}).username){showAlert(a,'err','✗ 先填写账号');return}showAlert(a,'warn','⟳ 登录中...');try{const ct=document.getElementById('mi-cookie-text')?.value?.trim()||'';const r=await fetch('/api/test/xiaomi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:gv('mi-username'),password:gv('mi-password'),use_saved:true,cookie_text:ct})});const d=await r.json();if(d.need_verify){a.className='alert alert-warn show';a.innerHTML='⚠ '+escHtml(d.msg)+'<br><a href="'+escAttr(d.verify_url)+'" target="_blank" style="color:var(--accent);font-weight:600;font-size:13px">📱 验证页面</a>';document.getElementById('mi-sts-card').style.display=''}else{showAlert(a,d.ok?'ok':'err',(d.ok?'✓ ':'✗ ')+d.msg);document.getElementById('mi-sts-card').style.display='none'}if(d.ok&&d.devices&&d.devices.length>0)renderDeviceList(d.devices)}catch(e){showAlert(a,'err','✗ '+e.message)}}
 async function qrLogin(){const a=document.getElementById('xiaomi-alert');showAlert(a,'warn','⟳ 生成二维码...');try{const r=await fetch('/api/qr/login',{method:'POST'});const d=await r.json();if(d.ok&&d.qr_url){document.getElementById('qr-img').src=d.qr_url;document.getElementById('qr-area').style.display='';document.getElementById('qr-msg').textContent='用米家 App 扫码';document.getElementById('qr-status').textContent='等待扫码...';showAlert(a,'warn','📱 扫码');if(qrPollTimer)clearInterval(qrPollTimer);qrPollTimer=setInterval(pollQrLogin,3000)}else{showAlert(a,'err','✗ '+(d.msg||'失败'))}}catch(e){showAlert(a,'err','✗ '+e.message)}}
-async function pollQrLogin(){try{const r=await fetch('/api/qr/poll');const d=await r.json();if(d.done){clearInterval(qrPollTimer);document.getElementById('qr-status').textContent=d.msg;document.getElementById('qr-area').style.display='none';const a=document.getElementById('xiaomi-alert');showAlert(a,'ok','✓ '+d.msg);const r2=await fetch('/api/test/xiaomi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:gv('mi-username'),password:gv('mi-password'),use_saved:true})});const d2=await r2.json();if(d2.ok&&d2.devices&&d2.devices.length>0)renderDeviceList(d2.devices)}else if(!d.ok){document.getElementById('qr-status').textContent=d.msg||'错误'}}catch(e){}}
+async function pollQrLogin(){try{const r=await fetch('/api/qr/poll');const d=await r.json();if(d.done){clearInterval(qrPollTimer);document.getElementById('qr-status').textContent=d.msg;document.getElementById('qr-area').style.display='none';const a=document.getElementById('xiaomi-alert');showAlert(a,'ok','✓ '+d.msg);const r2=await fetch('/api/test/xiaomi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({use_saved:true})});const d2=await r2.json();if(d2.ok&&d2.devices&&d2.devices.length>0)renderDeviceList(d2.devices)}else if(!d.ok){document.getElementById('qr-status').textContent=d.msg||'错误'}}catch(e){}}
 
 // ═══════════ Devices ═══════════
 async function loadDevices(){const a=document.getElementById('devices-alert');try{const[dr,ar]=await Promise.all([fetch('/api/devices'),fetch('/api/aliases')]);const dd=await dr.json();const ad=await ar.json();deviceAliases=ad.aliases||{};if(!dd.ok){showAlert(a,'err',dd.msg);return}document.getElementById('device-count').textContent=dd.count+'个';const list=document.getElementById('device-list');const dn={light:'💡灯光',switch:'🔌开关',climate:'🌡️空调',scene:'🎬场景',media_player:'📺媒体',script:'⚡脚本',automation:'🤖自动化',input_boolean:'🔘虚拟',fan:'🌀风扇',cover:'🪟窗帘',lock:'🔒门锁',vacuum:'🧹扫地'};list.innerHTML=dd.devices.map(d=>{const al=deviceAliases[d.entity_id]||'';return'<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">'+escHtml(d.name)+'</div><div class="device-meta">'+escHtml(d.entity_id)+' <span class="domain-tag">['+(dn[d.domain]||d.domain)+']</span></div></div><input class="alias-in" value="'+escHtml(al)+'" placeholder="别名" onchange="saveAlias(\''+escAttr(d.entity_id)+'\',this.value)"></div></div>'}).join('')}catch(e){showAlert(a,'err','加载失败: '+e.message)}}

@@ -11,7 +11,7 @@
 - **多房间空调控制** — 打开/关闭/调温/定时关闭，四句口语搞定
 - **定时执行** — "客厅空调30分钟后关闭"自动后台倒计时
 - **TTS 语音反馈** — 执行后小爱音箱语音播报结果
-- **Cookie + Token 持久化** — 一次登录，后续自动续期，无需重复短信验证
+- **扫码登录 + Token 持久化** — 用米家 App 扫一次码，后续自动续期，无需账号密码
 - **规则导入/导出** — 一键备份分享规则配置
 - **Docker / systemd 双部署** — 开箱即用
 
@@ -56,11 +56,11 @@ sudo systemctl enable --now xiaoai-ha-bridge@$USER
 
 打开 `http://<服务器IP>:47521`，按顺序完成三步配置：
 
-### 1. 小米账号 → 测试连接
+### 1. 小米账号 → 扫码登录
 
-填写小米账号和密码，点击**测试连接**。登录成功后自动保存 token，后续无需重复登录。
+点击**生成二维码**，用**米家 App** 扫描。登录成功后自动保存 token 并列出发现的音箱，后续无需重复登录。
 
-若触发短信验证：点击验证链接完成手机验证，手动提取浏览器 Cookie（包含 `userId`、`passToken`、`serviceToken`），粘贴到输入框提交。
+不需要填写账号密码；token 失效时重新扫一次即可。
 
 ### 2. Home Assistant → 测试连接
 
@@ -126,7 +126,7 @@ sudo systemctl enable --now xiaoai-ha-bridge@$USER
 ```
 ├── bridge.py              # 主程序（桥接核心 + Web API）
 ├── config/
-│   └── config.yaml        # 配置文件（账号、HA、规则）
+│   └── config.yaml        # 配置文件（登录凭据、HA、规则）
 ├── web/
 │   ├── index.html         # Web 配置面板
 │   └── static/            # 静态资源
