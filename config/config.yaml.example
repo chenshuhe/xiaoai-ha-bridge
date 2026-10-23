@@ -17,6 +17,10 @@ homeassistant:
   token: 'your_ha_long_lived_token'
 
 poll_interval_seconds: 2
+
+# 接管指令时先打断小爱的原生回答（默认 true；关闭后可能与原生回答撞车）
+interrupt_native_reply: true
+
 intent_rules: []
 ai_mode: true
 

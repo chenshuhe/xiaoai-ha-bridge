@@ -856,6 +856,13 @@ body{
         <div style="margin-top:8px;font-size:12px;color:var(--txt-muted)">建议2&ndash;5秒</div>
       </div>
       <div class="card">
+        <div class="card-head"><div class="card-title"><span>&#128266;</span>语音播报</div></div>
+        <div class="form-grid">
+          <div class="field full"><label>接管指令时的播报方式</label><label class="switch-label"><input type="checkbox" id="adv-interrupt-reply" checked><span class="switch-track"></span><span style="font-size:12px;font-weight:400">先打断小爱的原生回答，再播报结果</span></label></div>
+        </div>
+        <div class="hint-line" style="margin:10px 0 0">开启（默认）：你说「打开空调」时小爱会先回一句「没有找到设备…」，桥接器解析完会立刻掐断这句话、改播自己的结果，反应最快；代价是音箱分不清「小爱在说话」和「音乐在播放」，有极小概率误停音乐（播完会尝试接回，仅限 3 小时内用语音点过的音乐）。<br>关闭：不打断。播报可能和小爱原生回答撞车而延迟甚至丢失，但不会误停音乐。</div>
+      </div>
+      <div class="card">
         <div class="card-head"><div class="card-title"><span>&#129302;</span>AI托管</div></div>
         <div style="font-size:12px;color:var(--txt-muted);margin-bottom:10px">开启后未匹配指令由 AI 解析</div>
         <div class="form-grid">
@@ -995,6 +1002,7 @@ function applyConfigToUI() {
   safeCheck('adv-ai-mode',cfg.ai_mode||false);toggleAISettings();onProviderChange();
   // onProviderChange 会按 base 回填默认模型，这里再把用户自己填的模型盖回去
   safeSet('adv-ai-model',oai.model||'gpt-4o-mini');
+  safeCheck('adv-interrupt-reply',cfg.interrupt_native_reply!==false);
   // 新增的 AI 行为开关：一律带默认值，兼容还没写过这些键的老配置
   safeCheck('adv-ai-context',cfg.ai_context_enabled!==false);
   safeSet('adv-ai-context-turns',cfg.ai_context_turns??4);
@@ -1085,6 +1093,7 @@ async function saveAdvanced(){
   cfg.ai_device_filter=document.getElementById('adv-ai-device-filter').checked;
   cfg.ai_fallback=gv('adv-ai-fallback')||'native';
   cfg.ai_fallback_text=gv('adv-ai-fallback-text')||'抱歉，我没听懂这个指令，请换个说法。';
+  cfg.interrupt_native_reply=document.getElementById('adv-interrupt-reply').checked;
   cfg.update_repo=gv('adv-update-repo')||'chenshuhe/xiaoai-ha-bridge';
   cfg.update_proxy=gv('adv-update-proxy');
   // 邮件通知

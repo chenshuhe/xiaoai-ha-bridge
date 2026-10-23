@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.12.0"
+VERSION = "3.12.1"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -137,6 +137,10 @@ def _default_config() -> dict:
         "ai_clarify_enabled": True,     # 缺关键信息时反问
         "ai_clarify_ttl": 30,           # 待澄清问题有效期（秒）
         "ai_device_filter": True,       # 首轮用精简设备清单（miss 时自动全量重试）
+        # ── 语音播报行为 ──
+        # 接管指令时先打断小爱那句原生回答（比如"没有找到设备…"）再播报。
+        # 关掉后不打断：可能与小爱原生回答撞车，导致播报延迟甚至被丢弃，但不会误停音乐。
+        "interrupt_native_reply": True,
         # ── 版本更新 ──
         "update_repo": "chenshuhe/xiaoai-ha-bridge",
         "update_proxy": "",             # 访问 GitHub 的代理，形如 http://代理地址:端口（留空=直连）
@@ -892,14 +896,16 @@ async def bridge_loop():
                         if _is_cancel(query):
                             log.info("🚫 用户取消澄清: %s", query)
                             if mi_cfg.get("tts_reply", True):
-                                await _speak(na, device_id, "好的", interrupt=True)
+                                await _speak(na, device_id, "好的",
+                                             interrupt=_interrupt_enabled(rt_cfg))
                             continue
                         clar_actions, _ = await _resolve_clarification(pending, query, rt_cfg)
                         if clar_actions:
                             results = await _execute_actions(
                                 clar_actions, ha, na, _bridge_session,
                                 device_id=device_id,
-                                tts_reply=mi_cfg.get("tts_reply", True))
+                                tts_reply=mi_cfg.get("tts_reply", True),
+                                interrupt_reply=_interrupt_enabled(rt_cfg))
                             await _conversation.record_turn(
                                 query, clar_actions, results, _cached_devices())
                             bridge_state["last_command"] = query
@@ -941,7 +947,7 @@ async def bridge_loop():
                             # 要再喊一次唤醒词——否则用户根本不知道该接话
                             await _speak(na, device_id,
                                          c["question"] + "请先说小爱同学。",
-                                         interrupt=True)
+                                         interrupt=_interrupt_enabled(rt_cfg))
                         await _conversation.set_pending({
                             "question": c["question"],
                             "candidates": c["candidates"],
@@ -963,7 +969,8 @@ async def bridge_loop():
                     results = await _execute_actions(
                         actions, ha, na, _bridge_session,
                         device_id=device_id,
-                        tts_reply=mi_cfg.get("tts_reply", True))
+                        tts_reply=mi_cfg.get("tts_reply", True),
+                        interrupt_reply=_interrupt_enabled(rt_cfg))
                     await _conversation.record_turn(
                         query, actions, results, _cached_devices())
 
@@ -2781,9 +2788,15 @@ async def _speak(na, device_id: str, text: str, *,
     return False
 
 
+def _interrupt_enabled(cfg: dict) -> bool:
+    """接管指令时是否先打断小爱的原生回答（配置项，默认开）。"""
+    return bool(cfg.get("interrupt_native_reply", True))
+
+
 async def _execute_actions(actions: list[dict], ha: "HAClient", na, session,
                            device_id: str = "", tts_reply: bool = False,
-                           delayed_runner=None) -> list[dict]:
+                           delayed_runner=None,
+                           interrupt_reply: bool = False) -> list[dict]:
     """执行一组动作并返回每个动作的结果，不修改入参。
 
     原实现用 action.pop() 抠掉元字段，既销毁了调用方的列表，又依赖
@@ -2791,9 +2804,25 @@ async def _execute_actions(actions: list[dict], ha: "HAClient", na, session,
     这里改成显式构造干净 payload。
 
     na 为 None 时不播报（网页测试页用，避免点一下测试家里音箱突然说话）。
+    interrupt_reply=True 时，在开口播报前先打断小爱正在说的原生回答。
+    只打断一次，且等整组动作播完再恢复可能被误停的音乐（见 _resume_after_speaking）。
     """
     runner = delayed_runner or _delayed_call
     results = []
+    stopped_before_speak = False
+    spoke_once = False
+
+    async def _maybe_interrupt():
+        """第一次要播报前打断小爱原生回答；返回是否真的打断了什么。"""
+        nonlocal stopped_before_speak
+        if stopped_before_speak:
+            return True
+        stopped_before_speak = await _stop_playback(na, device_id)
+        if stopped_before_speak and not _resume_allowed():
+            # 近期没点过音乐 → 打断的多半就是小爱自己的回答，不能恢复
+            stopped_before_speak = False
+        return stopped_before_speak
+
     for idx, action in enumerate(actions):
         domain = action.get("domain", "")
         service = action.get("service", "")
@@ -2832,10 +2861,17 @@ async def _execute_actions(actions: list[dict], ha: "HAClient", na, session,
                     tts = f"抱歉，第{idx+1}步操作失败了"
                 elif idx < len(actions) - 1:
                     tts += "，继续执行下一步"
+            if interrupt_reply and not spoke_once:
+                await _maybe_interrupt()
             await _speak(na, device_id, tts)
+            spoke_once = True
 
         results.append({"domain": domain, "service": service, "ok": ok,
                         "reply": reply, "kind": kind})
+
+    if stopped_before_speak:
+        # 整组动作都播完（最后一次 TTS 已发出）再恢复，避免多步指令中途把歌接回来
+        asyncio.create_task(_resume_after_speaking(na, device_id))
     return results
 
 
@@ -2925,7 +2961,7 @@ async def _handle_ai_fallback(query: str, cfg: dict, diag: dict, na,
         if generated:
             text = generated
     log.info("📢 兜底播报(%s): %s", mode, text)
-    await _speak(na, device_id, text, interrupt=True)
+    await _speak(na, device_id, text, interrupt=_interrupt_enabled(cfg))
 
 
 # ──────────────── QR 扫码登录（绕过短信验证） ────────────────
