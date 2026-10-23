@@ -26,3 +26,27 @@ openai:
   model: deepseek-v4-flash
 
 device_aliases: {}
+
+# 小米账号掉线邮件提醒（可选）
+notify:
+  email:
+    enabled: false
+    smtp_host: smtp.qq.com
+    smtp_port: 465
+    security: ssl          # ssl / starttls / none
+    username: you@example.com
+    password: 'your_smtp_auth_code'
+    from_addr: you@example.com
+    to_addrs: you@example.com
+    cooldown_minutes: 30
+
+# 配置面板访问保护（可选，HTTP Basic Auth）
+web_auth:
+  enabled: false
+  username: admin
+  password: ''
+
+# 设备别名：entity_id -> 别名（可单个字符串，也可列表）
+# device_aliases:
+#   climate.living_room_ac: 客厅空调
+#   fan.living_room: [风扇, 电扇]

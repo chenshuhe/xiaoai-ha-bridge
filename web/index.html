@@ -597,6 +597,33 @@ body{
 .swatch-sunset{background:linear-gradient(135deg,#2a2018,#fb923c)}
 .swatch-crystal{background:linear-gradient(135deg,#ffffff,#6366f1)}
 .swatch-frost{background:linear-gradient(135deg,#ffffff,#0ea5e9)}
+/* ── 新增：提示行 / 复制 / 失效别名 / 帮助 / 设备选择弹窗 / Toast ── */
+.hint-line{font-size:12px;color:var(--txt-muted);line-height:1.8;background:var(--page-bg);border:1px dashed var(--border-default);border-radius:var(--r-md);padding:9px 12px;margin-bottom:14px}
+.hint-line code,.help-list code{font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--elevated-bg);border:1px solid var(--border-subtle);border-radius:3px;padding:1px 5px;color:var(--txt-secondary)}
+.btn-mini{padding:3px 9px;font-size:11px;border-radius:var(--r-sm);white-space:nowrap}
+.eid-copy{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--txt-dim);cursor:pointer;border-bottom:1px dotted var(--txt-dim);transition:.15s}
+.eid-copy:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.copy-hint{color:var(--txt-dim);font-size:10px;margin-left:4px}
+.orphan-note{color:var(--orange)}
+.orphan-note .btn-mini{margin-left:5px;vertical-align:middle}
+.domain-tag{color:var(--accent)}
+.help-list{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:12px;line-height:1.8;color:var(--txt-muted)}
+.help-list b{color:var(--txt-secondary)}
+.help-list code{color:var(--accent);border-color:var(--border-accent)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);display:none;align-items:flex-start;justify-content:center;padding:8vh 16px;z-index:100;overflow:auto}
+.modal{background:var(--panel-bg);border:1px solid var(--border-default);border-radius:var(--r-xl);box-shadow:var(--shadow-elevated);width:min(680px,100%);padding:16px;display:flex;flex-direction:column;gap:10px}
+.modal-head{display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:600;color:var(--txt-primary)}
+.modal-foot{font-size:11px;color:var(--txt-dim)}
+.picker-list{max-height:52vh;overflow:auto;display:flex;flex-direction:column;gap:4px}
+.pick-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border-default);border-radius:var(--r-md);cursor:pointer;transition:.12s;background:var(--surface-bg)}
+.pick-item:hover{border-color:var(--border-accent);background:var(--active-bg)}
+.pick-name{font-size:13px;color:var(--txt-primary)}
+.pick-eid{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--txt-dim);margin-top:2px}
+.pick-alias{font-size:11px;color:var(--green);white-space:nowrap}
+.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);background:var(--elevated-bg);border:1px solid var(--border-default);color:var(--txt-primary);padding:8px 16px;border-radius:999px;font-size:12px;opacity:0;pointer-events:none;transition:.2s;z-index:200;box-shadow:var(--shadow-elevated);max-width:90vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.err{border-color:var(--red-border);color:var(--red)}
+
 </style>
 </head>
 <body>
@@ -772,6 +799,7 @@ body{
         <div class="test-row"><input type="text" id="test-input" placeholder="如「打开客厅灯」" onkeydown="if(event.key==='Enter')testRule()"><button class="btn btn-primary" onclick="testRule()">测试</button></div>
         <div class="test-result" id="test-result">点击测试查看匹配</div>
       </div>
+      <div class="hint-line">💡 实体 ID 不用手抄：编辑规则时点「选择设备」直接从 HA 设备列表挑选；也可以到「设备管理」点设备 ID 一键复制。设备类型已补齐风扇、按键、窗帘、门锁、扫地机、加湿器、热水器等，风量 / 摇头 / 扫风 / 位置都能配。</div>
       <div class="btn-group">
         <button class="btn btn-primary" onclick="addRule()">+新增</button>
         <button class="btn btn-primary" onclick="saveRules()">&darr;保存</button>
@@ -785,6 +813,7 @@ body{
     <div class="page" id="page-devices">
       <div class="page-head"><div class="page-title"><span class="icon">&#9670;</span>设备管理</div><div class="page-desc">HA 设备别名设置</div></div>
       <div id="devices-alert" class="alert"></div>
+      <div class="hint-line">💡 点击设备 ID 可一键复制。若 HA 里实体 ID 变了，旧别名会被标成「已失效」并单独计数，点「清理」即可恢复正确统计（不会影响其它有效别名）。</div>
       <div class="dev-layout">
         <aside class="dev-types" id="device-types"></aside>
         <div class="dev-main">
@@ -802,6 +831,17 @@ body{
     <div class="page" id="page-schedules">
       <div class="page-head"><div class="page-title"><span class="icon">&#9687;</span>定时任务</div><div class="page-desc">自动化定时器</div></div>
       <div id="schedules-alert" class="alert"></div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span>&#10067;</span>定时任务怎么用</div></div>
+        <ol class="help-list">
+          <li><b>直接对小爱说</b>：<code>每天七点半打开热水器</code>、<code>工作日早上八点打开客厅灯</code>、<code>每周一三五晚上十点关闭客厅空调</code>、<code>三分钟后关闭餐厅空调</code>。</li>
+          <li>自然语言解析依赖 <b>AI 托管</b>（高级设置里开启并填好 API Key）。没开 AI 时只能用手写意图规则，或直接到 HA 里建自动化。</li>
+          <li>带<b>每天 / 工作日 / 周末 / 星期几 + 时间</b>的指令，会在 HA 里创建一条自动化，实体名形如 <code>automation.xiaoai_bridge_1750000000</code>；本页可查看启用状态和上次触发时间。</li>
+          <li>「N 分钟后…」属于<b>延迟执行</b>，跑在桥接器内存里，本页看不到；重启桥接器会丢，重要的事请用「每天几点」。</li>
+          <li>本页只列出<b>桥接器创建</b>的自动化；点 ✕ 删除会同时从 HA 配置里移除并重载，不会动你手写的其它自动化。</li>
+          <li>口语时间都认得：<code>七点半</code>、<code>19:00</code>、<code>晚上十点</code>、<code>下午三点一刻</code>、<code>每天中午十二点</code>。</li>
+        </ol>
+      </div>
       <div class="btn-group"><button class="btn btn-primary" onclick="loadSchedules()">&#128260;刷新</button><span style="color:var(--txt-muted);font-size:12px;margin-left:8px" id="schedule-count"></span></div>
       <div class="rule-list" id="schedule-list"></div>
     </div>
@@ -835,6 +875,33 @@ body{
           </div>
         </div>
       </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span>&#9993;</span>邮件通知 · 小米账号掉线提醒</div></div>
+        <div class="hint-line" style="margin:0 0 10px">开启后，桥接器发现小米账号登录态失效（需要重新扫码）时会发一封邮件；同一类告警默认 30 分钟内只发一次，不会刷屏。</div>
+        <div class="form-grid">
+          <div class="field"><label>开关</label><label class="switch-label"><input type="checkbox" id="adv-notify-enabled"><span class="switch-track"></span><span style="font-size:12px;font-weight:400">启用邮件提醒</span></label></div>
+          <div class="field"><label>SMTP 服务器</label><input type="text" id="adv-notify-host" placeholder="smtp.qq.com / smtp.163.com"></div>
+          <div class="field"><label>端口</label><input type="number" id="adv-notify-port" value="465"></div>
+          <div class="field"><label>加密方式</label><select id="adv-notify-security"><option value="ssl">SSL（465）</option><option value="starttls">STARTTLS（587）</option><option value="none">不加密（25）</option></select></div>
+          <div class="field"><label>账号</label><input type="text" id="adv-notify-user" placeholder="you@example.com" autocomplete="username"></div>
+          <div class="field"><label>密码 / 授权码</label><input type="password" id="adv-notify-pass" placeholder="邮箱授权码" autocomplete="new-password"></div>
+          <div class="field"><label>发件人（留空=账号）</label><input type="text" id="adv-notify-from" placeholder="you@example.com"></div>
+          <div class="field full"><label>收件人（多个用逗号分隔）</label><input type="text" id="adv-notify-to" placeholder="a@example.com,b@example.com"></div>
+          <div class="field"><label>告警冷却（分钟）</label><input type="number" id="adv-notify-cooldown" min="1" value="30"></div>
+        </div>
+        <div class="input-row" style="margin-top:10px"><button class="btn" onclick="testEmail()">&#9993; 发送测试邮件</button></div>
+        <div id="adv-notify-alert" class="alert"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span>&#128274;</span>面板访问保护</div></div>
+        <div class="hint-line" style="margin:0 0 10px">给配置面板加一层 HTTP Basic 认证，防止同网络的人打开面板改配置或偷 Token。默认关闭；开启后访问面板需要输入下面的账号密码。</div>
+        <div class="form-grid">
+          <div class="field"><label>开关</label><label class="switch-label"><input type="checkbox" id="adv-auth-enabled"><span class="switch-track"></span><span style="font-size:12px;font-weight:400">启用登录保护</span></label></div>
+          <div class="field"><label>用户名</label><input type="text" id="adv-auth-user" value="admin" autocomplete="username"></div>
+          <div class="field"><label>密码</label><input type="password" id="adv-auth-pass" placeholder="启用前必须设置" autocomplete="new-password"></div>
+        </div>
+        <div class="hint-line" style="margin:10px 0 0;color:var(--orange)">⚠ 启用后浏览器会弹登录框。忘记密码可编辑服务器上的 <code>config/config.yaml</code>，把 <code>web_auth.enabled</code> 改成 false。Basic 认证是明文口令，公网访问请务必套 HTTPS 或反向代理。</div>
+      </div>
       <div class="card" style="margin-top:16px">
         <div class="card-head"><div class="card-title"><span>&#11014;</span>版本更新</div></div>
         <div style="font-size:12px;color:var(--txt-muted);margin-bottom:10px">
@@ -860,12 +927,27 @@ body{
   </main>
 </div>
 
+<!-- ════ 设备选择弹窗（意图规则页） ════ -->
+<div class="modal-overlay" id="dev-picker" onclick="if(event.target===this)closeDevicePicker()">
+  <div class="modal">
+    <div class="modal-head"><span>选择 HA 设备</span><button class="rule-del" onclick="closeDevicePicker()">✕</button></div>
+    <input type="text" id="picker-search" class="dev-search" placeholder="搜索名称 / entity_id / 别名…" oninput="renderPickerItems()" autocomplete="off">
+    <div class="picker-list" id="picker-list"></div>
+    <div class="modal-foot">列表来自 HA 当前实体；点一行即填入规则实体 ID，设备类型也会跟着切换。</div>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
 <script>
 // ═══════════ State ═══════════
 let cfg = {};
 let autoScroll = true;
 let logTimer = null, statusTimer = null, qrPollTimer = null;
 let deviceAliases = {};
+let deviceCache = [], deviceTypeFilter = 'all';
+let pickerDevices = null, pickerTarget = null;
+let devicesLoadedOk = false;
+let toastTimer = null;
 
 // ═══════════ Theme ═══════════
 const THEMES = ['obsidian','aurora','sunset','crystal','frost'];
@@ -911,6 +993,8 @@ function applyConfigToUI() {
   sel.selectedIndex=known[base]!==undefined?known[base]:3;
   if(sel.selectedIndex>=3)document.getElementById('adv-ai-base').value=base;
   safeCheck('adv-ai-mode',cfg.ai_mode||false);toggleAISettings();onProviderChange();
+  // onProviderChange 会按 base 回填默认模型，这里再把用户自己填的模型盖回去
+  safeSet('adv-ai-model',oai.model||'gpt-4o-mini');
   // 新增的 AI 行为开关：一律带默认值，兼容还没写过这些键的老配置
   safeCheck('adv-ai-context',cfg.ai_context_enabled!==false);
   safeSet('adv-ai-context-turns',cfg.ai_context_turns??4);
@@ -921,6 +1005,21 @@ function applyConfigToUI() {
   safeSet('adv-ai-fallback-text',cfg.ai_fallback_text||'抱歉，我没听懂这个指令，请换个说法。');
   safeSet('adv-update-repo',cfg.update_repo||'chenshuhe/xiaoai-ha-bridge');
   safeSet('adv-update-proxy',cfg.update_proxy||'');
+  // 邮件通知 / 面板访问保护（老配置没有这些键时用默认值回填）
+  const nt=((cfg.notify||{}).email)||{};
+  safeCheck('adv-notify-enabled',!!nt.enabled);
+  safeSet('adv-notify-host',nt.smtp_host||'');
+  safeSet('adv-notify-port',nt.smtp_port||465);
+  safeSet('adv-notify-security',nt.security||'ssl');
+  safeSet('adv-notify-user',nt.username||'');
+  safeSet('adv-notify-pass',nt.password||'');
+  safeSet('adv-notify-from',nt.from_addr||'');
+  safeSet('adv-notify-to',nt.to_addrs||'');
+  safeSet('adv-notify-cooldown',nt.cooldown_minutes||30);
+  const wa=cfg.web_auth||{};
+  safeCheck('adv-auth-enabled',!!wa.enabled);
+  safeSet('adv-auth-user',wa.username||'admin');
+  safeSet('adv-auth-pass',wa.password||'');
   toggleFallbackText();toggleContextFields();
 }
 
@@ -975,7 +1074,26 @@ function showLoad(on){document.getElementById('ctrl-loading').classList.toggle('
 // （POST /api/config 是整份覆盖）。展开后 password 的掩码由后端还原成真值。
 async function saveXiaomi(){cfg.xiaomi={...(cfg.xiaomi||{}),hardware:gv('mi-hardware'),device_did:gv('mi-did'),tts_reply:document.getElementById('mi-tts').checked};await saveCfg('xiaomi')}
 async function saveHA(){cfg.homeassistant={url:gv('ha-url'),token:gv('ha-token')};await saveCfg('ha')}
-async function saveAdvanced(){cfg.poll_interval_seconds=parseInt(gv('adv-interval'))||2;cfg.ai_mode=document.getElementById('adv-ai-mode').checked;cfg.openai={api_base:gv('adv-ai-base')||'https://api.openai.com',api_key:gv('adv-ai-key'),model:gv('adv-ai-model')||'gpt-4o-mini'};cfg.ai_context_enabled=document.getElementById('adv-ai-context').checked;cfg.ai_context_turns=parseInt(gv('adv-ai-context-turns'))||4;cfg.ai_clarify_enabled=document.getElementById('adv-ai-clarify').checked;cfg.ai_clarify_ttl=parseInt(gv('adv-ai-clarify-ttl'))||30;cfg.ai_device_filter=document.getElementById('adv-ai-device-filter').checked;cfg.ai_fallback=gv('adv-ai-fallback')||'native';cfg.ai_fallback_text=gv('adv-ai-fallback-text')||'抱歉，我没听懂这个指令，请换个说法。';cfg.update_repo=gv('adv-update-repo')||'chenshuhe/xiaoai-ha-bridge';cfg.update_proxy=gv('adv-update-proxy');await saveCfg('adv')}
+async function saveAdvanced(){
+  cfg.poll_interval_seconds=parseInt(gv('adv-interval'))||2;
+  cfg.ai_mode=document.getElementById('adv-ai-mode').checked;
+  cfg.openai={api_base:gv('adv-ai-base')||'https://api.openai.com',api_key:gv('adv-ai-key'),model:gv('adv-ai-model')||'gpt-4o-mini'};
+  cfg.ai_context_enabled=document.getElementById('adv-ai-context').checked;
+  cfg.ai_context_turns=parseInt(gv('adv-ai-context-turns'))||4;
+  cfg.ai_clarify_enabled=document.getElementById('adv-ai-clarify').checked;
+  cfg.ai_clarify_ttl=parseInt(gv('adv-ai-clarify-ttl'))||30;
+  cfg.ai_device_filter=document.getElementById('adv-ai-device-filter').checked;
+  cfg.ai_fallback=gv('adv-ai-fallback')||'native';
+  cfg.ai_fallback_text=gv('adv-ai-fallback-text')||'抱歉，我没听懂这个指令，请换个说法。';
+  cfg.update_repo=gv('adv-update-repo')||'chenshuhe/xiaoai-ha-bridge';
+  cfg.update_proxy=gv('adv-update-proxy');
+  // 邮件通知
+  cfg.notify={...(cfg.notify||{}),email:{enabled:document.getElementById('adv-notify-enabled').checked,smtp_host:gv('adv-notify-host'),smtp_port:parseInt(gv('adv-notify-port'))||465,security:gv('adv-notify-security')||'ssl',username:gv('adv-notify-user'),password:gv('adv-notify-pass'),from_addr:gv('adv-notify-from'),to_addrs:gv('adv-notify-to'),cooldown_minutes:parseInt(gv('adv-notify-cooldown'))||30}};
+  // 面板访问保护
+  cfg.web_auth={enabled:document.getElementById('adv-auth-enabled').checked,username:gv('adv-auth-user')||'admin',password:gv('adv-auth-pass')};
+  await saveCfg('adv');
+  if(cfg.web_auth.enabled)setTimeout(()=>toast('已启用访问保护，请刷新页面并输入账号密码'),2000);
+}
 
 // ── 版本更新 ──
 async function checkUpdate(){
@@ -1014,84 +1132,24 @@ async function applyUpdateRemote(){
     },2000);
   }catch(e){s.style.color='var(--orange)';s.textContent='⚠ 连接中断（可能正在重启），刷新页面后确认版本';b.disabled=false}
 }
-async function saveRules(){collectRulesFromUI();await saveCfg('rules')}
-async function saveCfg(sec){const map={xiaomi:'xiaomi-alert',ha:'ha-alert',rules:'rules-alert',adv:'adv-alert'};const a=document.getElementById(map[sec]||'dash-alert');try{const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:cfg})});const d=await r.json();showAlert(a,d.ok?'ok':'err',(d.ok?'✓ ':'✗ ')+(d.ok?'保存成功':'保存失败'))}catch(e){showAlert(a,'err','✗ '+e.message)}setTimeout(()=>a.classList.remove('show'),3000)}
+
+async function saveRules(){const r=collectRulesFromUI();await saveCfg('rules');toast('已保存 '+r+' 条规则')}
+async function saveCfg(sec){
+  const map={xiaomi:'xiaomi-alert',ha:'ha-alert',rules:'rules-alert',adv:'adv-alert'};
+  const a=document.getElementById(map[sec]||'dash-alert');
+  try{
+    const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:cfg})});
+    const d=await r.json();
+    if(d.ok){showAlert(a,'ok','✓ 保存成功')}
+    else{showAlert(a,'err','✗ '+(d.msg||'保存失败'))}
+  }catch(e){showAlert(a,'err','✗ '+e.message)}
+  setTimeout(()=>a.classList.remove('show'),3500);
+}
 
 // ═══════════ Xiaomi ═══════════
 async function qrLogin(){const a=document.getElementById('xiaomi-alert');showAlert(a,'warn','⟳ 生成二维码...');try{const r=await fetch('/api/qr/login',{method:'POST'});const d=await r.json();if(d.ok&&d.qr_url){document.getElementById('qr-img').src=d.qr_url;document.getElementById('qr-area').style.display='';document.getElementById('qr-msg').textContent='用米家 App 扫码';document.getElementById('qr-status').textContent='等待扫码...';showAlert(a,'warn','📱 扫码');if(qrPollTimer)clearInterval(qrPollTimer);qrPollTimer=setInterval(pollQrLogin,3000)}else{showAlert(a,'err','✗ '+(d.msg||'失败'))}}catch(e){showAlert(a,'err','✗ '+e.message)}}
 async function pollQrLogin(){try{const r=await fetch('/api/qr/poll');const d=await r.json();if(d.done){clearInterval(qrPollTimer);document.getElementById('qr-status').textContent=d.msg;document.getElementById('qr-area').style.display='none';const a=document.getElementById('xiaomi-alert');showAlert(a,'ok','✓ '+d.msg);searchDevices()}else if(!d.ok){document.getElementById('qr-status').textContent=d.msg||'错误'}}catch(e){}}
 
-// ═══════════ Devices ═══════════
-// 设备管理：类型侧栏 + 搜索过滤 + 列表
-const DEV_DOMAINS={light:'💡灯光',climate:'🌡️空调',switch:'🔌开关',cover:'🪟窗帘',fan:'🌀风扇',media_player:'📺媒体',scene:'🎬场景',automation:'🤖自动化',script:'⚡脚本',vacuum:'🧹扫地',lock:'🔒门锁',button:'🔘按键',input_boolean:'🔘虚拟'};
-const DEV_ORDER=Object.keys(DEV_DOMAINS);
-let deviceCache=[],deviceTypeFilter='all';
-
-async function loadDevices(){
-  const a=document.getElementById('devices-alert');
-  try{
-    const[dr,ar]=await Promise.all([fetch('/api/devices'),fetch('/api/aliases')]);
-    const dd=await dr.json(),ad=await ar.json();
-    deviceAliases=ad.aliases||{};
-    if(!dd.ok){showAlert(a,'err',dd.msg);return}
-    deviceCache=dd.devices||[];
-    renderDeviceTypes();renderDeviceItems();
-  }catch(e){showAlert(a,'err','加载失败: '+e.message)}
-}
-
-function renderDeviceTypes(){
-  const counts={};
-  deviceCache.forEach(d=>{counts[d.domain]=(counts[d.domain]||0)+1});
-  const rank=d=>{const i=DEV_ORDER.indexOf(d);return i<0?99:i};
-  const doms=Object.keys(counts).sort((x,y)=>rank(x)-rank(y)||x.localeCompare(y));
-  let h='<div class="dev-type'+(deviceTypeFilter==='all'?' active':'')+'" onclick="selectDeviceType(\'all\')"><span>全部</span><b>'+deviceCache.length+'</b></div>';
-  doms.forEach(d=>{
-    h+='<div class="dev-type'+(deviceTypeFilter===d?' active':'')+'" onclick="selectDeviceType(\''+d+'\')"><span>'+(DEV_DOMAINS[d]||d)+'</span><b>'+counts[d]+'</b></div>';
-  });
-  document.getElementById('device-types').innerHTML=h;
-}
-
-function selectDeviceType(d){deviceTypeFilter=d;renderDeviceTypes();renderDeviceItems()}
-
-function renderDeviceItems(){
-  const q=(document.getElementById('device-search').value||'').trim().toLowerCase();
-  const list=document.getElementById('device-list');
-  const items=deviceCache.filter(d=>{
-    if(deviceTypeFilter!=='all'&&d.domain!==deviceTypeFilter)return false;
-    if(!q)return true;
-    const al=deviceAliases[d.entity_id];
-    const alTxt=Array.isArray(al)?al.join(' '):(al||'');
-    return (d.name||'').toLowerCase().includes(q)||(d.entity_id||'').toLowerCase().includes(q)||alTxt.toLowerCase().includes(q);
-  });
-  const filtering=deviceTypeFilter!=='all'||!!q;
-  document.getElementById('device-count').innerHTML='共 <b style="color:var(--txt-secondary)">'+deviceCache.length+
-    '</b> 个设备 · 已配别名 <em id="alias-count">'+Object.keys(deviceAliases).length+'</em> 个'+
-    (filtering?' · 当前显示 '+items.length+' 个':'');
-  if(!items.length){
-    list.innerHTML='<div class="empty-state">没有匹配的设备<br><span style="font-size:11px">换个关键词，或点左侧「全部」</span></div>';
-    return;
-  }
-  list.innerHTML=items.map(d=>{
-    const al=deviceAliases[d.entity_id];
-    const alStr=Array.isArray(al)?al.join('、'):(al||'');
-    return '<div class="rule-item'+(alStr?' has-alias':'')+'"><div class="device-item"><div class="device-info"><div class="device-name">'+escHtml(d.name)+'</div><div class="device-meta">'+escHtml(d.entity_id)+' <span class="domain-tag">['+(DEV_DOMAINS[d.domain]||d.domain)+']</span></div></div><input class="alias-in" data-orig="'+escAttr(alStr)+'" value="'+escHtml(alStr)+'" placeholder="别名" onchange="saveAlias(this,\''+escAttr(d.entity_id)+'\')"></div></div>';
-  }).join('');
-}
-
-async function saveAlias(input,eid){
-  const v=input.value.trim();
-  // 值没变就不提交：别名可能配了多个（列表），无脑回写会把列表压成单个字符串
-  if(v===(input.dataset.orig||''))return;
-  await fetch('/api/aliases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entity_id:eid,alias:v})});
-  if(v)deviceAliases[eid]=v;else delete deviceAliases[eid];
-  input.dataset.orig=v;
-  const row=input.closest('.rule-item');if(row)row.classList.toggle('has-alias',!!v);
-  const c=document.getElementById('alias-count');if(c)c.textContent=Object.keys(deviceAliases).length;
-}
-
-// ═══════════ Schedules ═══════════
-async function loadSchedules(){const a=document.getElementById('schedules-alert');try{const r=await fetch('/api/automations');const d=await r.json();if(!d.ok){showAlert(a,'err',d.msg);return}document.getElementById('schedule-count').textContent=d.count+'个';const list=document.getElementById('schedule-list');if(!d.automations.length){list.innerHTML='<div class="empty-state">暂无<br><span style="font-size:11px">对小爱说「每天七点半打开热水器」</span></div>';return}list.innerHTML=d.automations.map(s=>{const name=escHtml(s.alias||s.entity_id);const eid=escHtml(s.entity_id);const id=s.entity_id.replace('automation.','');const st=s.state==='on';const last=s.last_triggered?new Date(s.last_triggered).toLocaleString('zh-CN'):'从未';return'<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">'+name+'</div><div class="device-meta">'+eid+'</div><div style="font-size:10px;color:var(--txt-dim);margin-top:2px">上次: '+last+'</div></div><div style="display:flex;align-items:center;gap:10px"><span class="schedule-state '+(st?'on':'off')+'">'+(st?'启用':'禁用')+'</span><button class="rule-del" onclick="deleteSchedule(\''+escAttr(id)+'\')">✕</button></div></div></div>'}).join('')}catch(e){showAlert(a,'err','加载失败: '+e.message)}}
-async function deleteSchedule(id){if(!confirm('确定删除？'))return;const a=document.getElementById('schedules-alert');try{const r=await fetch('/api/automations/'+encodeURIComponent(id),{method:'DELETE'});const d=await r.json();if(d.ok){showAlert(a,'ok','已删除');loadSchedules()}else showAlert(a,'err',d.detail||'失败')}catch(e){showAlert(a,'err','失败: '+e.message)}}
 function renderDeviceList(devices){const box=document.getElementById('mi-device-list');const c=document.getElementById('mi-devices');const ce=document.getElementById('mi-device-count');box.style.display='';ce.textContent='('+devices.length+'台)';c.innerHTML=devices.map(d=>{const n=escHtml(d.name||'未知');const h=escHtml(d.hardware||d.model||'');const did=escHtml(d.deviceID||d.did||'');return'<div class="rule-item" style="cursor:pointer" onclick="selectDevice(\''+escAttr(h)+'\',\''+escAttr(did)+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><span style="color:var(--txt-primary);font-size:14px;font-weight:500">'+n+'</span><span style="color:var(--txt-muted);font-size:11px;margin-left:10px">'+h+'</span></div><span style="color:var(--txt-dim);font-size:10px;font-family:JetBrains Mono,monospace">DID: '+(did?did.substring(0,12)+'...':'—')+'</span></div></div>'}).join('');if(devices.length>0){const f=devices[0];selectDevice(f.hardware||f.model||'',f.deviceID||f.did||'')}}
 function selectDevice(hw,did){if(hw)document.getElementById('mi-hardware').value=hw;if(did)document.getElementById('mi-did').value=did}
 // 用已保存的凭据拉取音箱列表。扫码成功后也会走这里，避免两处重复。
@@ -1110,26 +1168,298 @@ async function searchDevices(){
     }
   }catch(e){showAlert(a,'err','✗ '+e.message)}
 }
-function escAttr(s){return String(s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;')}
+function escAttr(s){return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')}
 
 // ═══════════ Test HA ═══════════
 async function testHA(){const a=document.getElementById('ha-alert');showAlert(a,'warn','⟳ 测试中...');try{const r=await fetch('/api/test/ha',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:gv('ha-url'),token:gv('ha-token')})});const d=await r.json();showAlert(a,d.ok?'ok':'err',(d.ok?'✓ ':'✗ ')+d.msg)}catch(e){showAlert(a,'err','✗ '+e.message)}}
 
-// ═══════════ DOMAIN INFO ═══════════
-const DINFO={light:{name:'灯光',icon:'💡',s:{turn_on:'开',turn_off:'关',toggle:'切换'},x:[{k:'brightness_pct',l:'亮度%',p:'{0}'}]},switch:{name:'开关',icon:'🔌',s:{turn_on:'开',turn_off:'关',toggle:'切换'},x:[]},climate:{name:'空调',icon:'🌡️',s:{set_hvac_mode:'开机',turn_off:'关机',set_temperature:'调温'},x:[{k:'hvac_mode',l:'模式',p:'cool'},{k:'temperature',l:'温度',p:'{0}'},{k:'delay_minutes',l:'延迟关(分)',p:'{0}'}]},scene:{name:'场景',icon:'🎬',s:{turn_on:'执行'},x:[]},media_player:{name:'媒体',icon:'📺',s:{turn_on:'开',turn_off:'关',media_play:'播放',media_pause:'暂停'},x:[]},script:{name:'脚本',icon:'⚡',s:{turn_on:'执行'},x:[]},automation:{name:'自动化',icon:'🤖',s:{turn_on:'启用',turn_off:'禁用'},x:[]},input_boolean:{name:'虚拟开关',icon:'🔘',s:{turn_on:'开',turn_off:'关',toggle:'切换'},x:[]}}
+// ═══════════ Devices（设备管理） ═══════════
+// 类型标签必须和意图规则页的 DINFO 对齐，否则会出现「设备管理看得到、规则里配不了」。
+const DEV_DOMAINS={light:'💡灯光',climate:'🌡️空调',switch:'🔌开关',cover:'🪟窗帘',fan:'🌀风扇',media_player:'📺媒体',scene:'🎬场景',automation:'🤖自动化',script:'⚡脚本',vacuum:'🧹扫地',lock:'🔒门锁',button:'🔘按键',input_boolean:'🔘虚拟开关',humidifier:'💧加湿器',water_heater:'🚿热水器',valve:'🚰水阀',siren:'🚨警报器',select:'📋选择器',input_select:'📋虚拟选择',number:'🔢数值',input_number:'🔢虚拟数值',input_button:'🔘虚拟按键'};
+const DEV_ORDER=Object.keys(DEV_DOMAINS);
 
-// ═══════════ Rules ═══════════
+async function loadDevices(){
+  const a=document.getElementById('devices-alert');
+  try{
+    const[dr,ar]=await Promise.all([fetch('/api/devices'),fetch('/api/aliases')]);
+    const dd=await dr.json(),ad=await ar.json();
+    if(ad&&ad.aliases)deviceAliases=ad.aliases;
+    if(!dd.ok){showAlert(a,'err','✗ '+(dd.msg||'加载失败'));devicesLoadedOk=false;deviceCache=[];renderDeviceTypes();renderDeviceItems();return}
+    deviceCache=dd.devices||[];
+    devicesLoadedOk=true;
+    pickerDevices=null; // 设备清单变了，规则页的选择器下次重新拉
+    a.classList.remove('show');
+    renderDeviceTypes();renderDeviceItems();
+  }catch(e){showAlert(a,'err','加载失败: '+e.message)}
+}
+
+function renderDeviceTypes(){
+  const counts={};
+  deviceCache.forEach(d=>{counts[d.domain]=(counts[d.domain]||0)+1});
+  const rank=d=>{const i=DEV_ORDER.indexOf(d);return i<0?99:i};
+  const doms=Object.keys(counts).sort((x,y)=>rank(x)-rank(y)||x.localeCompare(y));
+  let h='<div class="dev-type'+(deviceTypeFilter==='all'?' active':'')+'" onclick="selectDeviceType(\'all\')"><span>全部</span><b>'+deviceCache.length+'</b></div>';
+  doms.forEach(d=>{
+    h+='<div class="dev-type'+(deviceTypeFilter===d?' active':'')+'" onclick="selectDeviceType(\''+d+'\')"><span>'+(DEV_DOMAINS[d]||d)+'</span><b>'+counts[d]+'</b></div>';
+  });
+  document.getElementById('device-types').innerHTML=h;
+}
+
+function selectDeviceType(d){deviceTypeFilter=d;renderDeviceTypes();renderDeviceItems()}
+
+function aliasText(eid){const v=deviceAliases[eid];if(!v)return '';return Array.isArray(v)?v.join('、'):String(v)}
+function aliasStats(){
+  const ids=new Set(deviceCache.map(d=>d.entity_id));
+  let matched=0;const orphans=[];
+  Object.keys(deviceAliases).forEach(k=>{if(ids.has(k))matched++;else orphans.push(k)});
+  return {matched,orphans};
+}
+
+// 统计只算"当前 HA 里真实存在的设备"，失效别名单独提示，
+// 这样 HA 实体 ID 变了之后不会再出现"明明没配别名却显示已配 1 个"的鬼数字。
+function renderAliasStats(shown){
+  const el=document.getElementById('device-count');if(!el)return;
+  const st=aliasStats();
+  el.innerHTML='共 <b style="color:var(--txt-secondary)">'+deviceCache.length+
+    '</b> 个设备 · 已配别名 <em>'+st.matched+'</em> 个'+
+    (shown!==undefined&&shown!==null?' · 当前显示 '+shown+' 个':'')+
+    (devicesLoadedOk&&st.orphans.length?' · <span class="orphan-note">⚠ '+st.orphans.length+' 个别名已失效（HA 里没有这个实体了）<button class="btn btn-mini" onclick="pruneAliases()">清理</button></span>':'');
+}
+
+function renderDeviceItems(){
+  const q=(document.getElementById('device-search').value||'').trim().toLowerCase();
+  const list=document.getElementById('device-list');
+  const items=deviceCache.filter(d=>{
+    if(deviceTypeFilter!=='all'&&d.domain!==deviceTypeFilter)return false;
+    if(!q)return true;
+    const alTxt=aliasText(d.entity_id);
+    return (d.name||'').toLowerCase().includes(q)||(d.entity_id||'').toLowerCase().includes(q)||alTxt.toLowerCase().includes(q);
+  });
+  const filtering=deviceTypeFilter!=='all'||!!q;
+  renderAliasStats(filtering?items.length:undefined);
+  if(!items.length){
+    list.innerHTML='<div class="empty-state">没有匹配的设备<br><span style="font-size:11px">换个关键词，或点左侧「全部」</span></div>';
+    return;
+  }
+  list.innerHTML=items.map(d=>{
+    const alStr=aliasText(d.entity_id);
+    return '<div class="rule-item'+(alStr?' has-alias':'')+'"><div class="device-item"><div class="device-info"><div class="device-name">'+escHtml(d.name)+'</div><div class="device-meta"><span class="eid-copy" title="点击复制 entity_id" onclick="copyText(\''+escAttr(d.entity_id)+'\')">'+escHtml(d.entity_id)+'</span> <span class="domain-tag">['+(DEV_DOMAINS[d.domain]||d.domain)+']</span></div></div><input class="alias-in" data-orig="'+escAttr(alStr)+'" value="'+escHtml(alStr)+'" placeholder="别名" onchange="saveAlias(this,\''+escAttr(d.entity_id)+'\')"></div></div>';
+  }).join('');
+}
+
+async function saveAlias(input,eid){
+  const v=input.value.trim();
+  // 值没变就不提交：别名可能配了多个（列表），无脑回写会把列表压成单个字符串
+  if(v===(input.dataset.orig||''))return;
+  try{
+    await fetch('/api/aliases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entity_id:eid,alias:v})});
+  }catch(e){toast('保存别名失败：'+e.message,'err');return}
+  if(v)deviceAliases[eid]=v;else delete deviceAliases[eid];
+  input.dataset.orig=v;
+  const row=input.closest('.rule-item');if(row)row.classList.toggle('has-alias',!!v);
+  const q=(document.getElementById('device-search').value||'').trim();
+  renderAliasStats((deviceTypeFilter!=='all'||q)?document.querySelectorAll('#device-list .rule-item').length:undefined);
+  toast(v?'别名已保存':'别名已移除');
+}
+
+async function pruneAliases(){
+  if(!confirm('将删除所有「HA 里已不存在实体」对应的别名，继续？'))return;
+  const a=document.getElementById('devices-alert');
+  try{
+    const r=await fetch('/api/aliases/prune',{method:'POST'});
+    const d=await r.json();
+    if(d.ok){showAlert(a,'ok','✓ 已清理 '+d.count+' 个失效别名');await loadDevices()}
+    else showAlert(a,'err','✗ '+(d.msg||'清理失败'));
+  }catch(e){showAlert(a,'err','✗ '+e.message)}
+}
+
+// ═══════════ Schedules（定时任务） ═══════════
+async function loadSchedules(){
+  const a=document.getElementById('schedules-alert');
+  try{
+    const r=await fetch('/api/automations');const d=await r.json();
+    if(!d.ok){showAlert(a,'err',d.msg);return}
+    document.getElementById('schedule-count').textContent=d.count+'个';
+    const list=document.getElementById('schedule-list');
+    if(!d.automations.length){
+      list.innerHTML='<div class="empty-state">还没有桥接器创建的定时任务<br><span style="font-size:11px">对小爱说「每天七点半打开热水器」「工作日八点打开客厅灯」</span></div>';
+      return;
+    }
+    list.innerHTML=d.automations.map(s=>{
+      const name=escHtml(s.alias||s.entity_id);const eid=escHtml(s.entity_id);
+      const id=s.entity_id.replace('automation.','');
+      const st=s.state==='on';
+      const last=s.last_triggered?new Date(s.last_triggered).toLocaleString('zh-CN'):'从未';
+      return '<div class="rule-item"><div class="device-item"><div class="device-info"><div class="device-name">'+name+'</div><div class="device-meta">'+eid+'</div><div style="font-size:10px;color:var(--txt-dim);margin-top:2px">上次: '+last+'</div></div><div style="display:flex;align-items:center;gap:10px"><span class="schedule-state '+(st?'on':'off')+'">'+(st?'启用':'禁用')+'</span><button class="rule-del" onclick="deleteSchedule(\''+escAttr(id)+'\')">✕</button></div></div></div>';
+    }).join('');
+  }catch(e){showAlert(a,'err','加载失败: '+e.message)}
+}
+async function deleteSchedule(id){if(!confirm('确定删除？会同时从 HA 里移除这条自动化。'))return;const a=document.getElementById('schedules-alert');try{const r=await fetch('/api/automations/'+encodeURIComponent(id),{method:'DELETE'});const d=await r.json();if(d.ok){showAlert(a,'ok','已删除');loadSchedules()}else showAlert(a,'err',d.detail||'失败')}catch(e){showAlert(a,'err','失败: '+e.message)}}
+
+// ═══════════ 邮件通知测试 ═══════════
+async function testEmail(){
+  const a=document.getElementById('adv-notify-alert');
+  showAlert(a,'warn','⟳ 发送中…');
+  const email={smtp_host:gv('adv-notify-host'),smtp_port:parseInt(gv('adv-notify-port'))||465,security:gv('adv-notify-security'),username:gv('adv-notify-user'),password:gv('adv-notify-pass'),from_addr:gv('adv-notify-from'),to_addrs:gv('adv-notify-to')};
+  try{
+    const r=await fetch('/api/notify/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});
+    const d=await r.json();
+    showAlert(a,d.ok?'ok':'err',(d.ok?'✓ ':'✗ ')+d.msg);
+  }catch(e){showAlert(a,'err','✗ '+e.message)}
+}
+
+// ═══════════ DOMAIN INFO ═══════════
+// s = 该类型可用的 HA 服务；x = 额外参数（k=字段名 l=显示名 p=占位 opts=下拉选项）
+const DINFO={
+  light:{name:'灯光',icon:'💡',s:{turn_on:'开',turn_off:'关',toggle:'切换'},x:[{k:'brightness_pct',l:'亮度%',p:'{0}'},{k:'color_temp_kelvin',l:'色温K',p:'4000'}]},
+  switch:{name:'开关',icon:'🔌',s:{turn_on:'开',turn_off:'关',toggle:'切换'},x:[]},
+  climate:{name:'空调',icon:'🌡️',s:{turn_on:'开机',turn_off:'关机',set_temperature:'调温',set_hvac_mode:'设模式',set_fan_mode:'设风速',set_swing_mode:'设扫风',set_humidity:'设湿度'},x:[{k:'hvac_mode',l:'模式',p:'cool',opts:['cool','heat','dry','fan_only','auto']},{k:'temperature',l:'温度',p:'{0}'},{k:'fan_mode',l:'风速',p:'auto',opts:['auto','low','medium','high']},{k:'swing_mode',l:'扫风/风向',p:'on',opts:['on','off']},{k:'humidity',l:'湿度',p:'50'},{k:'delay_minutes',l:'延迟(分)',p:'{0}'}]},
+  fan:{name:'风扇',icon:'🌀',s:{turn_on:'开',turn_off:'关',toggle:'切换',set_percentage:'调风量',oscillate:'摇头',set_preset_mode:'设模式'},x:[{k:'percentage',l:'风量%',p:'{0}'},{k:'oscillating',l:'摇头',p:'true',opts:['true','false']},{k:'preset_mode',l:'模式',p:'auto'}]},
+  cover:{name:'窗帘',icon:'🪟',s:{open_cover:'打开',close_cover:'关闭',stop_cover:'停止',set_cover_position:'调位置'},x:[{k:'position',l:'开合度%',p:'{0}'}]},
+  media_player:{name:'媒体',icon:'📺',s:{turn_on:'开',turn_off:'关',media_play:'播放',media_pause:'暂停',media_next_track:'下一首',media_previous_track:'上一首',volume_set:'设音量',volume_mute:'静音'},x:[{k:'volume_level',l:'音量(0~1)',p:'0.5'},{k:'is_volume_muted',l:'静音',p:'true',opts:['true','false']}]},
+  scene:{name:'场景',icon:'🎬',s:{turn_on:'执行'},x:[]},
+  script:{name:'脚本',icon:'⚡',s:{turn_on:'执行'},x:[]},
+  automation:{name:'自动化',icon:'🤖',s:{turn_on:'启用',turn_off:'禁用'},x:[]},
+  input_boolean:{name:'虚拟开关',icon:'🔘',s:{turn_on:'开',turn_off:'关',toggle:'切换'},x:[]},
+  vacuum:{name:'扫地机',icon:'🧹',s:{start:'开始清扫',stop:'停止',pause:'暂停',return_to_base:'回充'},x:[]},
+  lock:{name:'门锁',icon:'🔒',s:{lock:'上锁',unlock:'开锁'},x:[]},
+  button:{name:'按键',icon:'🔘',s:{press:'按下'},x:[]},
+  humidifier:{name:'加湿器',icon:'💧',s:{turn_on:'开',turn_off:'关',toggle:'切换',set_humidity:'设湿度'},x:[{k:'humidity',l:'湿度%',p:'{0}'}]},
+  water_heater:{name:'热水器',icon:'🚿',s:{turn_on:'开',turn_off:'关',set_temperature:'调温',set_operation_mode:'设模式'},x:[{k:'temperature',l:'温度',p:'{0}'},{k:'operation_mode',l:'模式',p:'auto'}]},
+  valve:{name:'水阀',icon:'🚰',s:{open_valve:'打开',close_valve:'关闭',stop_valve:'停止',set_valve_position:'调位置'},x:[{k:'position',l:'开度%',p:'{0}'}]},
+  siren:{name:'警报器',icon:'🚨',s:{turn_on:'响',turn_off:'停',toggle:'切换'},x:[]},
+  select:{name:'选择器',icon:'📋',s:{select_option:'选择'},x:[{k:'option',l:'选项',p:'选项名'}]},
+  input_select:{name:'虚拟选择',icon:'📋',s:{select_option:'选择'},x:[{k:'option',l:'选项',p:'选项名'}]},
+  number:{name:'数值',icon:'🔢',s:{set_value:'设值'},x:[{k:'value',l:'数值',p:'{0}'}]},
+  input_number:{name:'虚拟数值',icon:'🔢',s:{set_value:'设值'},x:[{k:'value',l:'数值',p:'{0}'}]},
+  input_button:{name:'虚拟按键',icon:'🔘',s:{press:'按下'},x:[]}
+};
+const DINFO_KEYS=Object.keys(DINFO);
+
+// ═══════════ Rules（意图规则） ═══════════
 function renderRules(){const rules=cfg.intent_rules||[];const list=document.getElementById('rule-list');list.innerHTML='';rules.forEach((r,i)=>{list.appendChild(buildRule(r,i))})}
-function buildRule(rule,i){const a=rule.action||{};const d=a.domain||'light';const info=DINFO[d]||DINFO.light;const skip=new Set(['domain','service','entity_id','reply','temperature','brightness_pct','delay_minutes','hvac_mode']);const div=document.createElement('div');div.className='rule-item';div.dataset.idx=i;let h='<div class="rule-head"><span class="rule-num">#'+(i+1)+'</span><button class="rule-del" onclick="deleteRule('+i+')">✕</button></div><div class="rule-grid"><div class="field full"><label>你说的话</label><input type="text" class="r-p" value="'+escHtml(rule.pattern||'')+'" placeholder="打开客厅灯"></div><div class="field" style="grid-column:1/-1"><label>设备类型</label><div class="domain-select">';Object.entries(DINFO).forEach(([k,v])=>{h+='<button class="domain-btn '+(k===d?'active':'')+'" onclick="switchD(this,\''+k+'\')"><span class="domain-icon">'+v.icon+'</span>'+v.name+'</button>'});h+='</div><input type="hidden" class="r-d" value="'+escHtml(d)+'"></div><div class="field"><label>操作</label><select class="r-s" onchange="updX(this)">';Object.entries(info.s).forEach(([k,v])=>{h+='<option value="'+k+'" '+(a.service===k?'selected':'')+'>'+v+'</option>'});h+='</select></div><div class="field"><label>实体ID</label><input type="text" class="r-e" value="'+escHtml(a.entity_id||'')+'" placeholder="climate.xxx"></div><div class="extra-fields">';info.x.forEach(x=>{h+='<div class="field"><label>'+x.l+'</label><input type="text" class="r-xk" data-key="'+x.k+'" value="'+escHtml(a[x.k]||'')+'" placeholder="'+(x.p||'')+'"></div>'});h+='</div><div class="field full"><label>回复</label><input type="text" class="r-r" value="'+escHtml(a.reply||'好的')+'" placeholder="好的"></div><div class="field full"><label>其他(JSON)</label><input type="text" class="r-j" value="'+escHtml(extraJ(a,skip))+'" placeholder=\'{"brightness_pct":"{0}"}\'></div></div>';div.innerHTML=h;return div}
+
+function serviceOpts(services,cur){
+  let h='',found=false;
+  Object.entries(services).forEach(([k,v])=>{if(k===cur)found=true;h+='<option value="'+k+'"'+(k===cur?' selected':'')+'>'+escHtml(v)+'（'+k+'）</option>'});
+  if(cur&&!found)h+='<option value="'+escAttr(cur)+'" selected>'+escHtml(cur)+'（自定义）</option>';
+  return h;
+}
+
+function extraFieldsHtml(fields,action){
+  return (fields||[]).map(f=>{
+    const v=action&&action[f.k]!=null?String(action[f.k]):'';
+    if(f.opts){
+      return '<div class="field"><label>'+escHtml(f.l)+'</label><select class="r-xk" data-key="'+f.k+'"><option value="">（不设置）</option>'+f.opts.map(o=>'<option value="'+escAttr(o)+'"'+(String(o)===v?' selected':'')+'>'+escHtml(o)+'</option>').join('')+'</select></div>';
+    }
+    return '<div class="field"><label>'+escHtml(f.l)+'</label><input type="text" class="r-xk" data-key="'+f.k+'" value="'+escHtml(v)+'" placeholder="'+(f.p||'')+'"></div>';
+  }).join('');
+}
+
+function buildRule(rule,i){
+  const a=rule.action||{};
+  let d=a.domain||'light';
+  if(!DINFO[d])d='light';
+  const info=DINFO[d];
+  // skip 里要带上该类型的所有扩展字段，否则同一参数会在「其他(JSON)」里再出现一次
+  const skip=new Set(['domain','service','entity_id','reply',...info.x.map(x=>x.k)]);
+  const div=document.createElement('div');
+  div.className='rule-item';
+  div.dataset.idx=i;
+  let h='<div class="rule-head"><span class="rule-num">#'+(i+1)+'</span><button class="rule-del" onclick="deleteRule('+i+')">✕</button></div>';
+  h+='<div class="rule-grid">';
+  h+='<div class="field full"><label>你说的话（正则，{num} 匹配数字）</label><input type="text" class="r-p" value="'+escHtml(rule.pattern||'')+'" placeholder="打开客厅灯"></div>';
+  h+='<div class="field" style="grid-column:1/-1"><label>设备类型</label><div class="domain-select">';
+  DINFO_KEYS.forEach(k=>{const v=DINFO[k];h+='<button class="domain-btn'+(k===d?' active':'')+'" data-dom="'+k+'" onclick="switchD(this,\''+k+'\')"><span class="domain-icon">'+v.icon+'</span>'+v.name+'</button>'});
+  h+='</div><input type="hidden" class="r-d" value="'+escHtml(d)+'"></div>';
+  h+='<div class="field"><label>操作</label><select class="r-s">'+serviceOpts(info.s,a.service)+'</select></div>';
+  h+='<div class="field"><label>实体 ID</label><div class="input-row"><input type="text" class="r-e" value="'+escHtml(a.entity_id||'')+'" placeholder="'+d+'.xxx"><button class="btn btn-mini" onclick="openDevicePicker(this)" title="从 HA 设备列表选择">选择</button></div></div>';
+  h+='<div class="extra-fields">'+extraFieldsHtml(info.x,a)+'</div>';
+  h+='<div class="field full"><label>回复（小爱播报内容）</label><input type="text" class="r-r" value="'+escHtml(a.reply||'好的')+'" placeholder="好的"></div>';
+  h+='<div class="field full"><label>其他参数 (JSON，高级)</label><input type="text" class="r-j" value="'+escHtml(extraJ(a,skip))+'" placeholder=\'{"brightness_pct":"{0}"}\'></div>';
+  h+='</div>';
+  div.innerHTML=h;
+  return div;
+}
+
 function extraJ(a,s){const e={};for(const[k,v]of Object.entries(a))if(!s.has(k))e[k]=v;return Object.keys(e).length?JSON.stringify(e):''}
-function switchD(btn,d){btn.parentElement.querySelectorAll('.domain-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');const item=btn.closest('.rule-item');item.querySelector('.r-d').value=d;const info=DINFO[d];const sel=item.querySelector('.r-s');sel.innerHTML=Object.entries(info.s).map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('');item.querySelector('.extra-fields').innerHTML=info.x.length?info.x.map(x=>'<div class="field"><label>'+x.l+'</label><input type="text" class="r-xk" data-key="'+x.k+'" value="" placeholder="'+(x.p||'')+'"></div>').join(''):''}
-function updX(sel){}
-function collectRulesFromUI(){const items=document.querySelectorAll('.rule-item');cfg.intent_rules=Array.from(items).map(el=>{const a={domain:el.querySelector('.r-d').value,service:el.querySelector('.r-s').value,entity_id:el.querySelector('.r-e').value.trim(),reply:el.querySelector('.r-r').value.trim()||'好的'};el.querySelectorAll('.r-xk').forEach(inp=>{const v=inp.value.trim();if(v)a[inp.dataset.key]=v});const j=el.querySelector('.r-j').value.trim();if(j){try{Object.assign(a,JSON.parse(j))}catch{}}return{pattern:el.querySelector('.r-p').value.trim(),action:a}})}
-function addRule(){collectRulesFromUI();cfg.intent_rules=cfg.intent_rules||[];cfg.intent_rules.push({pattern:'',action:{domain:'light',service:'turn_on',entity_id:'',reply:'好的'}});renderRules();const last=document.querySelector('.rule-list')?.lastElementChild;if(last)last.scrollIntoView({behavior:'smooth'})}
+
+// 切换设备类型：重建操作下拉和扩展字段（字段值清空，避免把空调参数带到风扇上）
+function setDomain(item,dom){
+  if(!DINFO[dom])dom='light';
+  const info=DINFO[dom];
+  item.querySelector('.r-d').value=dom;
+  item.querySelectorAll('.domain-btn').forEach(b=>b.classList.toggle('active',b.dataset.dom===dom));
+  const sel=item.querySelector('.r-s');
+  const cur=sel?sel.value:'';
+  if(sel)sel.innerHTML=serviceOpts(info.s,info.s[cur]?cur:'');
+  const ex=item.querySelector('.extra-fields');if(ex)ex.innerHTML=extraFieldsHtml(info.x,{});
+  const ei=item.querySelector('.r-e');if(ei)ei.placeholder=dom+'.xxx';
+}
+function switchD(btn,dom){const item=btn.closest('.rule-item');setDomain(item,dom)}
+
+// 只收集 #rule-list 里的卡片。之前用 document.querySelectorAll('.rule-item')，
+// 设备管理/定时任务/小米设备列表也是 .rule-item，串页之后这里会抓到没有 .r-d 的卡片，
+// 直接抛异常，导致测试/保存/新增/导入导出全部失效。
+function collectRulesFromUI(){
+  const items=document.querySelectorAll('#rule-list .rule-item');
+  cfg.intent_rules=Array.from(items).map(el=>{
+    const a={domain:el.querySelector('.r-d').value,service:el.querySelector('.r-s').value,entity_id:el.querySelector('.r-e').value.trim(),reply:el.querySelector('.r-r').value.trim()||'好的'};
+    el.querySelectorAll('.r-xk').forEach(inp=>{const v=inp.value.trim();if(v)a[inp.dataset.key]=v});
+    const j=el.querySelector('.r-j').value.trim();
+    if(j){try{Object.assign(a,JSON.parse(j))}catch{}}
+    return{pattern:el.querySelector('.r-p').value.trim(),action:a};
+  });
+  return cfg.intent_rules.length;
+}
+function addRule(){collectRulesFromUI();cfg.intent_rules=cfg.intent_rules||[];cfg.intent_rules.push({pattern:'',action:{domain:'light',service:'turn_on',entity_id:'',reply:'好的'}});renderRules();const last=document.querySelector('#rule-list .rule-item:last-child');if(last)last.scrollIntoView({behavior:'smooth',block:'center'})}
 function deleteRule(i){collectRulesFromUI();cfg.intent_rules.splice(i,1);renderRules()}
 function exportRules(){collectRulesFromUI();const b=new Blob([JSON.stringify(cfg.intent_rules,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='rules-'+(new Date().toISOString().slice(0,10))+'.json';a.click();URL.revokeObjectURL(a.href);showAlert(document.getElementById('rules-alert'),'ok','✓ 已导出')}
-function importRules(){const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=async()=>{try{const t=await inp.files[0].text();const r=JSON.parse(t);if(!Array.isArray(r))throw Error('需JSON数组');cfg.intent_rules=r;renderRules();showAlert(document.getElementById('rules-alert'),'ok','✓ 导入'+r.length+'条')}catch(e){showAlert(document.getElementById('rules-alert'),'err','✗ '+e.message)}};inp.click()}
+function importRules(){const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=async()=>{try{const t=await inp.files[0].text();const r=JSON.parse(t);if(!Array.isArray(r))throw Error('需JSON数组');cfg.intent_rules=r;renderRules();showAlert(document.getElementById('rules-alert'),'ok','✓ 导入'+r.length+'条，点「保存」后生效')}catch(e){showAlert(document.getElementById('rules-alert'),'err','✗ '+e.message)}};inp.click()}
 async function testRule(){collectRulesFromUI();const t=document.getElementById('test-input').value.trim();if(!t)return;const r=await fetch('/api/test/rule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,rules:cfg.intent_rules||[]})});const d=await r.json();const el=document.getElementById('test-result');if(d.clarify){el.style.color='var(--orange)';el.textContent='❓ 需要澄清\n'+(d.msg||'')+'\n\n候选设备:\n'+d.clarify.candidates.map(c=>'  · '+c).join('\n')}else if(d.matched){el.style.color=d.executed?'var(--green)':'var(--orange)';const tag=d.ai_used?'🤖 AI 解析':'📋 规则匹配';el.textContent=(d.executed?'✓ 已执行':'⚠ 匹配')+' · '+tag+'\n'+(d.msg||'')+'\n\n'+JSON.stringify(d.action,null,2)}else{el.style.color='var(--red)';el.textContent='✗ '+(d.msg||'未匹配')}}
+
+// ═══════════ 设备选择器（规则页「选择」按钮） ═══════════
+async function openDevicePicker(btn){
+  pickerTarget=btn.closest('.rule-item');
+  document.getElementById('dev-picker').style.display='flex';
+  document.getElementById('picker-search').value='';
+  const list=document.getElementById('picker-list');
+  list.innerHTML='<div class="empty-state">正在加载 HA 设备…</div>';
+  if(!pickerDevices){
+    try{
+      const[dr,ar]=await Promise.all([fetch('/api/devices'),fetch('/api/aliases')]);
+      const dd=await dr.json(),ad=await ar.json();
+      pickerDevices=dd.ok?(dd.devices||[]):[];
+      if(ad&&ad.aliases)deviceAliases=ad.aliases;
+    }catch(e){pickerDevices=[]}
+  }
+  renderPickerItems();
+  setTimeout(()=>document.getElementById('picker-search').focus(),50);
+}
+function closeDevicePicker(){document.getElementById('dev-picker').style.display='none';pickerTarget=null}
+function renderPickerItems(){
+  const q=(document.getElementById('picker-search').value||'').trim().toLowerCase();
+  const list=document.getElementById('picker-list');
+  let items=(pickerDevices||[]);
+  if(q)items=items.filter(d=>(d.name||'').toLowerCase().includes(q)||(d.entity_id||'').toLowerCase().includes(q)||aliasText(d.entity_id).toLowerCase().includes(q));
+  if(!items.length){
+    list.innerHTML='<div class="empty-state">没有匹配的设备<br><span style="font-size:11px">先在 Home Assistant 页确认已连接</span></div>';
+    return;
+  }
+  list.innerHTML=items.map(d=>{
+    const al=aliasText(d.entity_id);
+    return '<div class="pick-item" onclick="pickDevice(\''+escAttr(d.entity_id)+'\')"><div><div class="pick-name">'+escHtml(d.name)+' <span class="domain-tag">'+(DEV_DOMAINS[d.domain]||d.domain)+'</span></div><div class="pick-eid">'+escHtml(d.entity_id)+'</div></div>'+(al?'<span class="pick-alias">'+escHtml(al)+'</span>':'')+'</div>';
+  }).join('');
+}
+function pickDevice(eid){
+  const d=(pickerDevices||[]).find(x=>x.entity_id===eid);
+  if(pickerTarget){
+    if(d)setDomain(pickerTarget,d.domain);
+    pickerTarget.querySelector('.r-e').value=eid;
+  }
+  closeDevicePicker();
+  toast('已选择 '+(d?d.name:eid));
+}
 
 // ═══════════ Logs ═══════════
 async function fetchLogs(){try{const r=await fetch('/api/logs?n=80');const logs=await r.json();const p=document.getElementById('log-panel');p.innerHTML=logs.map(l=>'<div class="log-line"><span class="log-time">'+l.time+'</span><span class="log-lvl-'+l.level+'">['+l.level+']</span><span class="log-msg">'+escHtml(l.msg)+'</span></div>').join('');if(autoScroll)p.scrollTop=p.scrollHeight}catch{}}
@@ -1137,8 +1467,23 @@ function clearLogs(){document.getElementById('log-panel').innerHTML=''}
 function toggleAutoScroll(){autoScroll=!autoScroll;document.getElementById('btn-autoscroll').textContent='⬇自动滚动 '+(autoScroll?'ON':'OFF')}
 
 // ═══════════ Utils ═══════════
-function showAlert(el,t,m){el.className='alert '+t+' show';el.textContent=m}
+function showAlert(el,t,m){if(!el)return;el.className='alert '+t+' show';el.textContent=m}
 function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function toast(msg,type){
+  let el=document.getElementById('toast');
+  if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el)}
+  el.className='toast show'+(type==='err'?' err':'');
+  el.textContent=msg;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.className='toast'},1900);
+}
+async function copyText(text){
+  try{
+    if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text)}
+    else{const t=document.createElement('textarea');t.value=text;t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);t.select();document.execCommand('copy');t.remove()}
+    toast('已复制：'+text);
+  }catch(e){toast('复制失败，请手动选择文本','err')}
+}
 
 init();
 </script>

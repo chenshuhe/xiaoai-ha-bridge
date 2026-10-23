@@ -8,6 +8,8 @@ Web 配置版 | 端口 47521
 """
 
 import asyncio
+import base64
+import hmac
 import json
 import logging
 import os
@@ -22,12 +24,12 @@ from typing import Any
 import aiohttp
 import yaml
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.11.6"
+VERSION = "3.12.0"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -138,6 +140,26 @@ def _default_config() -> dict:
         # ── 版本更新 ──
         "update_repo": "chenshuhe/xiaoai-ha-bridge",
         "update_proxy": "",             # 访问 GitHub 的代理，形如 http://代理地址:端口（留空=直连）
+        # ── 邮件通知（小米账号掉线时提醒）──
+        "notify": {
+            "email": {
+                "enabled": False,
+                "smtp_host": "",
+                "smtp_port": 465,
+                "security": "ssl",      # ssl / starttls / none
+                "username": "",
+                "password": "",
+                "from_addr": "",        # 留空时用 username
+                "to_addrs": "",         # 多个收件人用逗号分隔
+                "cooldown_minutes": 30, # 同类告警最短间隔，避免刷屏
+            },
+        },
+        # ── 面板访问保护（HTTP Basic Auth，可关闭）──
+        "web_auth": {
+            "enabled": False,
+            "username": "admin",
+            "password": "",
+        },
         "device_aliases": {},
         "event_monitors": [],
         "poll_interval_seconds": 2,
@@ -228,19 +250,34 @@ class IntentParser:
                     if isinstance(val, str):
                         for i, g in enumerate(groups):
                             val = val.replace(f"{{{i}}}", g or "")
-                        action[key] = self._convert_value(val)
+                        # reply 是给人听的文案，原样保留（但要先替换 {0} 占位符），
+                        # 不能被 "开/关" 这类词转成布尔值
+                        action[key] = val if key == "reply" else self._convert_value(val, key)
                 return action
         return None
 
-    @staticmethod
-    def _convert_value(val: str):
+    # 这些参数在 HA 里是布尔值；其它参数（如 climate 的 swing_mode="on"）
+    # 的 "on/off" 是枚举字符串，不能一律转成 True/False
+    _BOOL_KEYS = {"oscillating", "is_volume_muted"}
+
+    @classmethod
+    def _convert_value(cls, val: str, key: str = ""):
+        s = (val or "").strip()
+        low = s.lower()
+        if key in cls._BOOL_KEYS:
+            if low in ("true", "on", "yes", "开", "是"):
+                return True
+            if low in ("false", "off", "no", "关", "否"):
+                return False
+        elif low in ("true", "false"):
+            return low == "true"
         try:
-            return int(val)
+            return int(s)
         except ValueError:
             try:
-                return float(val)
+                return float(s)
             except ValueError:
-                return val
+                return s
 
 
 # ──────────────── HA 客户端 ────────────────
@@ -447,6 +484,114 @@ def _has_xiaomi_credentials(cfg: dict) -> bool:
     return False
 
 
+# ──────────────── 邮件通知（小米账号掉线提醒） ────────────────
+# 只在“登录态彻底失效、需要人工重新扫码”时发信，且有冷却时间，避免重启/重试刷屏。
+_notify_cooldown: dict[str, float] = {}
+
+
+def _email_cfg(cfg: dict) -> dict:
+    """取出并规整邮件通知配置。"""
+    raw = ((cfg.get("notify") or {}).get("email") or {})
+    def _as_int(v, default=0):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return default
+
+    out = {
+        "enabled": bool(raw.get("enabled")),
+        "smtp_host": (raw.get("smtp_host") or "").strip(),
+        "smtp_port": _as_int(raw.get("smtp_port")),
+        "security": (raw.get("security") or "ssl").strip().lower(),
+        "username": (raw.get("username") or "").strip(),
+        "password": raw.get("password") or "",
+        "from_addr": (raw.get("from_addr") or "").strip(),
+        "to_addrs": (raw.get("to_addrs") or "").strip(),
+        "cooldown_minutes": _as_int(raw.get("cooldown_minutes"), 30),
+    }
+    if not out["smtp_port"]:
+        out["smtp_port"] = 465 if out["security"] == "ssl" else 587
+    if not out["from_addr"]:
+        out["from_addr"] = out["username"]
+    return out
+
+
+def _split_addrs(text: str) -> list[str]:
+    return [a.strip() for a in re.split(r"[,;，；\s]+", text or "") if a.strip()]
+
+
+def _send_email_sync(email: dict, subject: str, body: str) -> None:
+    """同步发信（在线程里跑，避免阻塞事件循环）。失败抛异常由调用方记录。"""
+    import smtplib
+    import ssl as _ssl
+    from email.header import Header
+    from email.message import EmailMessage
+    from email.utils import formataddr
+
+    msg = EmailMessage()
+    msg["Subject"] = str(Header(subject, "utf-8"))
+    msg["From"] = formataddr((str(Header("小爱 HA 桥接", "utf-8")), email["from_addr"]))
+    msg["To"] = ", ".join(_split_addrs(email["to_addrs"]))
+    msg.set_content(body, charset="utf-8")
+
+    host, port = email["smtp_host"], email["smtp_port"]
+    timeout = 20
+    if email["security"] == "ssl":
+        server = smtplib.SMTP_SSL(host, port, timeout=timeout,
+                                  context=_ssl.create_default_context())
+    else:
+        server = smtplib.SMTP(host, port, timeout=timeout)
+    try:
+        if email["security"] == "starttls":
+            server.starttls(context=_ssl.create_default_context())
+        if email["username"]:
+            server.login(email["username"], email["password"])
+        server.send_message(msg)
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
+
+
+async def _send_email(email: dict, subject: str, body: str) -> bool:
+    if not email.get("smtp_host") or not _split_addrs(email.get("to_addrs", "")):
+        log.warning("邮件通知未配置完整（SMTP 服务器 / 收件人），跳过发送")
+        return False
+    try:
+        await asyncio.to_thread(_send_email_sync, email, subject, body)
+        log.info("📧 邮件已发送：%s → %s", subject, email.get("to_addrs"))
+        return True
+    except Exception as e:
+        log.error("📧 邮件发送失败：%s", e)
+        return False
+
+
+async def _notify_xiaomi_offline(cfg: dict, reason: str) -> bool:
+    """小米账号掉线时发邮件提醒。同一类告警受 cooldown_minutes 限制。"""
+    email = _email_cfg(cfg)
+    if not email["enabled"]:
+        return False
+    now = time.time()
+    cooldown = max(email["cooldown_minutes"], 0) * 60
+    if now - _notify_cooldown.get("xiaomi_offline", 0) < cooldown:
+        log.info("小米账号掉线提醒在冷却期内，本次跳过（原因：%s）", reason)
+        return False
+    body = (
+        "小爱同学 → Home Assistant 桥接器检测到小米账号登录态失效。\n\n"
+        f"时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"原因：{reason}\n\n"
+        "影响：语音指令无法再被桥接器获取，小爱会退回原生回答。\n"
+        "处理：打开配置面板（默认 http://<服务器IP>:47521）→ 小米账号 → 生成二维码，"
+        "用米家 App 重新扫码登录。\n"
+    )
+    ok = await _send_email(
+        email, "【小爱桥接】小米账号已掉线，请重新扫码登录", body)
+    if ok:
+        _notify_cooldown["xiaomi_offline"] = now
+    return ok
+
+
 async def _get_latest_ask_from_xiaoai(session: aiohttp.ClientSession, device_id: str,
                                       hardware: str, last_ts: int) -> tuple[list[dict], int, bool]:
     """HTTP API 方式获取最新对话（参考 xiaomusic get_latest_ask_from_xiaoai）
@@ -490,6 +635,7 @@ async def bridge_loop():
     if not _has_xiaomi_credentials(cfg):
         bridge_state["error"] = "小米账号未登录，请打开配置页扫码登录"
         bridge_state["running"] = False
+        await _notify_xiaomi_offline(cfg, "配置中没有可用的小米账号登录凭据（passToken / cookie）")
         return
 
     if not ha_cfg.get("token"):
@@ -599,6 +745,7 @@ async def bridge_loop():
             bridge_state["error"] = ("登录失败，请打开配置页面 → 在「Cookie 登录」输入框中粘贴浏览器 Cookie → 点测试连接。"
                                      "Cookie 获取方法：浏览器打开 account.xiaomi.com → F12 → Application → Cookies → 复制全部")
             bridge_state["running"] = False
+            await _notify_xiaomi_offline(cfg, "小米账号登录失败（passToken / Cookie / 密码三种方式均未成功）")
             return
 
         # 保存 token
@@ -696,6 +843,8 @@ async def bridge_loop():
                                 log.info("重新登录成功")
                             else:
                                 log.warning("重新登录失败")
+                                await _notify_xiaomi_offline(
+                                    load_config(), "Token 过期后自动重新登录失败")
                         except Exception as e:
                             log.warning("重新登录异常: %s", e)
                         await asyncio.sleep(poll_interval)
@@ -1251,6 +1400,39 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="小爱HA桥接器", lifespan=lifespan)
 
+
+# ──────────────── 面板访问保护（HTTP Basic Auth） ────────────────
+# 默认关闭；在「高级设置 → 面板访问保护」里开启后，所有页面与 API 都需要登录。
+# 说明：Basic Auth 只是明文口令的 base64，除非前面有 HTTPS，否则同网段可被抓包。
+def _panel_auth_ok(header: str | None, web_auth: dict) -> bool:
+    if not header or not header.lower().startswith("basic "):
+        return False
+    try:
+        raw = base64.b64decode(header.split(" ", 1)[1].strip()).decode("utf-8")
+    except Exception:
+        return False
+    user, _, pwd = raw.partition(":")
+    return (hmac.compare_digest(user, str(web_auth.get("username") or ""))
+            and hmac.compare_digest(pwd, str(web_auth.get("password") or "")))
+
+
+@app.middleware("http")
+async def panel_auth_middleware(request: Request, call_next):
+    try:
+        web_auth = (load_config().get("web_auth") or {})
+    except Exception:
+        web_auth = {}
+    # 没有密码时视为未启用，避免勾了开关却没设密码把面板锁死
+    if web_auth.get("enabled") and (web_auth.get("password") or ""):
+        if not _panel_auth_ok(request.headers.get("authorization"), web_auth):
+            return PlainTextResponse(
+                "需要登录：请输入配置面板的用户名和密码",
+                status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="XiaoAI HA Bridge", charset="UTF-8"'},
+            )
+    return await call_next(request)
+
+
 # 静态文件
 static_dir = Path("web/static")
 static_dir.mkdir(parents=True, exist_ok=True)
@@ -1290,6 +1472,10 @@ async def get_config():
         cfg["homeassistant"]["token"] = "••••••••"
     if cfg.get("openai", {}).get("api_key"):
         cfg["openai"]["api_key"] = "••••••••"
+    if ((cfg.get("notify") or {}).get("email") or {}).get("password"):
+        cfg["notify"]["email"]["password"] = "••••••••"
+    if (cfg.get("web_auth") or {}).get("password"):
+        cfg["web_auth"]["password"] = "••••••••"
     return cfg
 
 
@@ -1309,6 +1495,15 @@ async def post_config(req: SaveConfigRequest):
         cfg["homeassistant"]["token"] = existing.get("homeassistant", {}).get("token", "")
     if cfg.get("openai", {}).get("api_key") == masked:
         cfg["openai"]["api_key"] = existing.get("openai", {}).get("api_key", "")
+    if (((cfg.get("notify") or {}).get("email") or {}).get("password")) == masked:
+        cfg["notify"]["email"]["password"] = (
+            ((existing.get("notify") or {}).get("email") or {}).get("password", ""))
+    if (cfg.get("web_auth") or {}).get("password") == masked:
+        cfg["web_auth"]["password"] = (existing.get("web_auth") or {}).get("password", "")
+    # 面板密码开关：勾了但密码为空（且原来也没有）会让面板无法登录，直接拒绝
+    wa = cfg.get("web_auth") or {}
+    if wa.get("enabled") and not (wa.get("password") or "").strip():
+        return JSONResponse({"ok": False, "msg": "启用面板访问保护前必须设置密码"}, status_code=400)
     save_config(cfg)
     log.info("配置已保存")
     return {"ok": True}
@@ -1549,9 +1744,9 @@ async def get_ha_devices():
     except Exception as e:
         return {"ok": False, "devices": [], "msg": f"无法连接 HA: {e}"}
 
-    # 只保留可控设备（排除 sensor、binary_sensor 等只读类）
-    controllable = {"light", "switch", "climate", "scene", "media_player", "script",
-                    "automation", "input_boolean", "fan", "cover", "lock", "vacuum", "button"}
+    # 只保留可控设备（排除 sensor、binary_sensor 等只读类）。
+    # 用模块级集合，避免这里和 AI 解析用的白名单各写一份、改一处漏一处。
+    controllable = _CONTROLLABLE_DOMAINS
 
     devices = []
     for s in all_states:
@@ -1602,6 +1797,66 @@ async def save_alias(req: SaveAliasRequest):
         aliases.pop(req.entity_id, None)
     save_config(cfg)
     return {"ok": True}
+
+
+@app.post("/api/aliases/prune")
+async def prune_aliases(dry_run: bool = False):
+    """清理指向"HA 里已不存在实体"的失效别名。
+
+    HA 那边重新配对/迁移时实体 ID 会变（例如 light.abc_2 → light.xyz_3），
+    旧别名就成了永远匹配不到设备的孤儿：面板上"已配别名"的数量会虚高。
+    这里按 HA 当前真实的实体清单做一次对账。dry_run=true 只返回会删哪些，不落盘。
+    """
+    data = await get_ha_devices()
+    if not data.get("ok"):
+        return {"ok": False, "msg": data.get("msg", "无法获取 HA 设备列表")}
+    valid = {d["entity_id"] for d in data.get("devices", [])}
+    cfg = load_config()
+    aliases = cfg.get("device_aliases") or {}
+    removed = [k for k in list(aliases) if k not in valid]
+    if removed and not dry_run:
+        for k in removed:
+            aliases.pop(k, None)
+        cfg["device_aliases"] = aliases
+        save_config(cfg)
+        log.info("🧹 已清理 %d 个失效别名: %s", len(removed), removed)
+    return {"ok": True, "removed": removed, "count": len(removed),
+            "remaining": len(aliases), "dry_run": dry_run}
+
+
+class NotifyTestRequest(BaseModel):
+    email: dict[str, Any] | None = None
+
+
+@app.post("/api/notify/test")
+async def notify_test(req: NotifyTestRequest):
+    """发送一封测试邮件。允许直接传页面里还没保存的表单值。"""
+    cfg = load_config()
+    saved = _email_cfg(cfg)
+    form = req.email or {}
+    email = dict(saved)
+    if form:
+        for key in ("smtp_host", "smtp_port", "security", "username",
+                    "from_addr", "to_addrs", "cooldown_minutes"):
+            if form.get(key) not in (None, ""):
+                email[key] = form[key]
+        if form.get("password") and form.get("password") != "••••••••":
+            email["password"] = form["password"]
+    try:
+        email["smtp_port"] = int(float(email.get("smtp_port") or 0))
+    except (TypeError, ValueError):
+        email["smtp_port"] = 0
+    if not email["smtp_port"]:
+        email["smtp_port"] = 465 if email.get("security") == "ssl" else 587
+    if not email.get("from_addr"):
+        email["from_addr"] = email.get("username", "")
+    if not email.get("smtp_host") or not _split_addrs(email.get("to_addrs", "")):
+        return {"ok": False, "msg": "请先填写 SMTP 服务器和收件人"}
+    ok = await _send_email(
+        email, "【小爱桥接】测试邮件",
+        "这是一封来自小爱同学 → Home Assistant 桥接器的测试邮件。\n"
+        "收到说明邮件通知配置可用；小米账号掉线时会往这个地址发提醒。\n")
+    return {"ok": ok, "msg": "测试邮件已发送" if ok else "发送失败，请查看日志（SMTP/授权码/端口）"}
 
 
 # ──────────────── AI 命令解析 ────────────────
@@ -1817,20 +2072,41 @@ async def _parse_and_resolve_actions(query: str, parser: IntentParser, cfg: dict
 
 
 _AI_DOMAIN_ACTIONS: dict[str, list[str]] = {
-    "light": ["turn_on 打开", "turn_off 关闭", "toggle 切换"],
+    "light": ["turn_on 打开", "turn_off 关闭", "toggle 切换（参数 brightness_pct 亮度%）"],
     "switch": ["turn_on 打开", "turn_off 关闭", "toggle 切换"],
-    "climate": ["turn_on 打开", "turn_off 关闭", "set_temperature 设置温度",
-                "set_hvac_mode 设置模式(cool/heat/dry/fan_only/auto)"],
+    "climate": ["turn_on 打开", "turn_off 关闭", "set_temperature 设置温度(temperature)",
+                "set_hvac_mode 设置模式(hvac_mode: cool/heat/dry/fan_only/auto)",
+                "set_fan_mode 设置风速(fan_mode: low/medium/high/auto)",
+                "set_swing_mode 设置扫风/风向(swing_mode: on/off/vertical/horizontal)",
+                "set_humidity 设置湿度(humidity)"],
     "scene": ["turn_on 激活"],
-    "media_player": ["turn_on 打开", "turn_off 关闭", "media_play 播放", "media_pause 暂停"],
+    "media_player": ["turn_on 打开", "turn_off 关闭", "media_play 播放", "media_pause 暂停",
+                     "media_next_track 下一首", "media_previous_track 上一首",
+                     "volume_set 设置音量(volume_level 0~1)", "volume_mute 静音(is_volume_muted true/false)"],
     "script": ["turn_on 执行"],
     "automation": ["turn_on 启用", "turn_off 禁用"],
     "input_boolean": ["turn_on 打开", "turn_off 关闭", "toggle 切换"],
-    "fan": ["turn_on 打开", "turn_off 关闭", "set_speed 设置风速"],
-    "cover": ["open_cover 打开", "close_cover 关闭", "stop_cover 停止"],
+    "fan": ["turn_on 打开", "turn_off 关闭", "toggle 切换",
+            "set_percentage 设置风量(percentage 0~100)",
+            "oscillate 摇头(oscillating true/false)",
+            "set_preset_mode 设置模式(preset_mode)"],
+    "cover": ["open_cover 打开", "close_cover 关闭", "stop_cover 停止",
+              "set_cover_position 调到指定位置(position 0~100)"],
     "lock": ["lock 锁定", "unlock 解锁"],
-    "vacuum": ["start 开始清扫", "stop 停止", "return_to_base 回充"],
+    "vacuum": ["start 开始清扫", "stop 停止", "pause 暂停", "return_to_base 回充"],
     "button": ["press 按下"],
+    "humidifier": ["turn_on 打开", "turn_off 关闭", "toggle 切换",
+                   "set_humidity 设置湿度(humidity 0~100)"],
+    "water_heater": ["turn_on 打开", "turn_off 关闭", "set_temperature 设置温度(temperature)",
+                     "set_operation_mode 设置模式(operation_mode)"],
+    "valve": ["open_valve 打开", "close_valve 关闭", "stop_valve 停止",
+              "set_valve_position 调到指定位置(position 0~100)"],
+    "siren": ["turn_on 打开", "turn_off 关闭", "toggle 切换"],
+    "select": ["select_option 选择选项(option)"],
+    "input_select": ["select_option 选择选项(option)"],
+    "number": ["set_value 设置数值(value)"],
+    "input_number": ["set_value 设置数值(value)"],
+    "input_button": ["press 按下"],
 }
 
 
@@ -1870,7 +2146,13 @@ def _build_ai_prompt(query: str, devices: list[dict], aliases: dict,
         "4. 多步/复杂指令（如\"打开餐厅空调温度设置为二十四度\"=打开空调+设置温度）返回 actions 数组：\n"
         '   {\"actions\":[{\"domain\":\"climate\",\"service\":\"turn_on\",\"entity_id\":\"...\",\"reply\":\"好的，已打开餐厅空调\"},{\"domain\":\"climate\",\"service\":\"set_temperature\",\"entity_id\":\"...\",\"temperature\":24,\"reply\":\"温度已设为24度\"}]}\n'
         "5. reply 只填在最后一个 action 或每个明显需要回复的 action 上，中间的可以不填\n"
-        "6. 如果用户说百分比，对应 brightness_pct 或 volume_level\n"
+        "6. 百分比/档位对应的参数：灯 brightness_pct、风扇 percentage（0~100）、"
+        "音箱 volume_level（0~1）、湿度 humidity、窗帘/水阀 position（0~100）。"
+        "特殊控制：「摇头/摆头」→ fan.oscillate + oscillating；"
+        "「扫风/风向」→ climate.set_swing_mode + swing_mode；"
+        "「风速/风量」→ climate.set_fan_mode 或 fan.set_percentage；"
+        "「模式」→ climate.set_hvac_mode / water_heater.set_operation_mode / fan.set_preset_mode；"
+        "「静音」→ media_player.volume_mute + is_volume_muted\n"
         "7. 如果这不是控制设备的指令（闲聊/问答/天气/百科），返回 {\"action\":\"none\",\"reason\":\"non_device\"}；"
         "如果是设备指令但列表里找不到对应设备，返回 {\"action\":\"none\",\"reason\":\"unmatched\"}\n"
         "8. 只返回 JSON，不要任何其他文字。\n"
@@ -1896,6 +2178,8 @@ def _build_ai_prompt(query: str, devices: list[dict], aliases: dict,
         "   - 灯的亮度：brightness_pct = 当前 ±20（范围 5~100）；当前是 off 就按 30 打开\n"
         "   - 音量：volume_level = 当前 ±0.1（范围 0.1~1.0）；没有当前值时用 0.3\n"
         "   - 温度：temperature = 当前设定值 ±1；没有当前值时用 26\n"
+        "   - 风量：fan.set_percentage 的 percentage = 当前 ±20（范围 10~100）；没有当前值时用 50\n"
+        "   - 窗帘/水阀位置：position = 当前 ±20（范围 0~100）\n"
         "12.【缺信息时先推断，推不出才反问】用户没说清是哪个设备时：\n"
         "   - 若【最近操作设备】能合理推断（同房间/同类型）→ 直接返回动作，不要反问\n"
         "   - 若同类候选 ≥2 且完全无法推断 → 返回 {\"clarify\":{\"question\":\"口语化中文问句，≤30字，"
@@ -1940,23 +2224,32 @@ def _build_ai_prompt(query: str, devices: list[dict], aliases: dict,
 _CONTROLLABLE_DOMAINS = {
     "light", "switch", "climate", "scene", "media_player", "script",
     "automation", "input_boolean", "fan", "cover", "lock", "vacuum", "button",
+    # 常见但之前缺失的品类：加湿器、热水器、水阀、警报器、选择器、数值
+    "humidifier", "water_heater", "valve", "siren",
+    "select", "input_select", "number", "input_number", "input_button",
 }
 
 # 对"再暗一点"这类相对指令有用的当前值。只带这些，避免 prompt 体积膨胀。
 _CUR_ATTRS: dict[str, tuple[str, ...]] = {
     "light": ("brightness",),
-    "climate": ("temperature", "hvac_mode", "current_temperature", "fan_mode"),
+    "climate": ("temperature", "hvac_mode", "current_temperature", "fan_mode",
+                "swing_mode", "humidity"),
     "media_player": ("volume_level",),
-    "fan": ("percentage",),
+    "fan": ("percentage", "preset_mode", "oscillating"),
     "cover": ("current_position",),
+    "humidifier": ("humidity",),
+    "water_heater": ("temperature", "operation_mode"),
+    "valve": ("current_position",),
 }
 
 # 首轮精简清单：这些类型永远保留
 _TIER1_DOMAINS = {"light", "climate", "scene", "script", "fan", "cover",
-                  "lock", "vacuum", "media_player", "input_boolean"}
+                  "lock", "vacuum", "media_player", "input_boolean",
+                  "humidifier", "water_heater", "valve", "siren"}
 # 这些类型数量巨大又不常被点名（switch 133 / button 60 / automation 10），
 # 只在被关键词或别名命中时才带上；漏掉时靠"全量重试"兜底。
-_TIER2_DOMAINS = {"switch", "button", "automation"}
+_TIER2_DOMAINS = {"switch", "button", "automation", "select", "input_select",
+                  "number", "input_number", "input_button"}
 _DEVICE_CAP = 60
 _EXTRA_TOKENS = ("空调", "热水器", "洗衣机", "干衣机", "洗碗机", "窗帘", "电脑")
 

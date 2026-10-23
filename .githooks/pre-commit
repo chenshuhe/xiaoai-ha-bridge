@@ -16,8 +16,8 @@ FAIL=0
 
 echo -e "${YELLOW}🔍 安全检查：扫描敏感文件...${NC}"
 
-# 检查1: 禁止提交 config.yaml
-if git diff --cached --name-only | grep -q 'config/config.yaml'; then
+# 检查1: 禁止提交 config.yaml（注意用精确匹配，别误伤 config.yaml.example）
+if git diff --cached --name-only | grep -qx 'config/config.yaml'; then
   echo -e "${RED}❌ 错误：config/config.yaml 包含敏感信息（密码/token/密钥），禁止提交！${NC}"
   echo "   请改用 config/config.yaml.example 作为模板"
   FAIL=1
