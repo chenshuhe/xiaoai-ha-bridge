@@ -9,12 +9,14 @@ Web 配置版 | 端口 47521
 
 import asyncio
 import base64
+import hashlib
 import hmac
 import json
 import logging
 import os
 import re
 import shutil
+import tempfile
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -29,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.12.1"
+VERSION = "3.12.2"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -87,6 +89,10 @@ bridge_state = {
     "error": None,
     "start_time": None,
     "pending_clarify": None,   # 正在等待用户回答的澄清问题
+    # 小米账号登录态健康度（与 bridge_loop 是否在跑无关，专门给面板提示用）
+    "xiaomi_ok": None,          # True=最近一次登录成功 / False=失败 / None=还没检测
+    "xiaomi_checked_at": None,  # 最近一次检测时间 HH:MM:SS
+    "xiaomi_detail": None,      # 失败原因摘要（截断）
 }
 
 _bridge_task: asyncio.Task | None = None
@@ -383,7 +389,9 @@ def _set_token(account, cfg: dict):
                 "userId": user_data["userId"],
                 "deviceId": user_data.get("deviceId", ""),
             }
-            log.info("已从 auth.json 恢复 token")
+            log.info("已从 auth.json 恢复 token（passToken=%s… userId=%s）",
+                     _tok_hash(account.token.get("passToken")),
+                     "有" if account.token.get("userId") else "无")
             return
         except Exception as e:
             log.warning("auth.json 读取失败: %s", e)
@@ -399,12 +407,23 @@ def _set_token(account, cfg: dict):
             "userId": cookies_dict.get("userId", ""),
             "deviceId": cookies_dict.get("deviceId", ""),
         }
+        log.info("已从 cookie_text 恢复 token（passToken=%s… serviceToken=%s）",
+                 _tok_hash(account.token.get("passToken")),
+                 "有" if cookies_dict.get("serviceToken") else "空")
+    else:
+        log.warning("本地没有可恢复的 passToken（auth.json / cookie_text 均为空）")
 
 
 def _save_auth_and_token(account) -> None:
     """登录成功后保存 auth.json 和 .mi.token（参考 xiaomusic）"""
     if not hasattr(account, 'token') or not account.token:
         return
+    prev_pass = ""
+    try:
+        if AUTH_PATH.exists():
+            prev_pass = (json.loads(AUTH_PATH.read_text(encoding="utf-8")) or {}).get("passToken", "")
+    except Exception:
+        prev_pass = ""
     try:
         AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
         auth_data = {
@@ -414,14 +433,25 @@ def _save_auth_and_token(account) -> None:
         }
         with open(AUTH_PATH, "w", encoding="utf-8") as f:
             json.dump(auth_data, f, ensure_ascii=False)
-        log.info("已保存 auth.json")
+        if not auth_data["passToken"]:
+            log.warning("已保存 auth.json，但 passToken 为空（下次登录会失败）")
+        else:
+            log.info("已保存 auth.json（passToken=%s…）", _tok_hash(auth_data["passToken"]))
+            if prev_pass and prev_pass != auth_data["passToken"]:
+                # 小米在部分登录场景会下发新的 passToken，旧副本随即作废。
+                # 这条日志是排查「搜到设备但几分钟后登录失效」的关键线索。
+                log.info("ℹ️ passToken 已轮换（%s… → %s…），旧的 auth/cookie 副本会失效",
+                         _tok_hash(prev_pass), _tok_hash(auth_data["passToken"]))
     except Exception as e:
         log.warning("保存 auth.json 失败: %s", e)
     try:
         TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(TOKEN_PATH, "w", encoding="utf-8") as f:
             json.dump(account.token, f, ensure_ascii=False)
-        log.info("已保存 .mi.token")
+        micoapi = account.token.get("micoapi") or []
+        log.info("已保存 .mi.token（passToken=%s… serviceToken 长度 %s）",
+                 _tok_hash(account.token.get("passToken")),
+                 len(micoapi[1]) if len(micoapi) > 1 and micoapi[1] else 0)
     except Exception as e:
         log.warning("保存 .mi.token 失败: %s", e)
 
@@ -634,11 +664,16 @@ async def bridge_loop():
     mi_cfg = cfg.get("xiaomi", {})
     ha_cfg = cfg.get("homeassistant", {})
 
+    # 凭据排障：启动时把三份 token 的存在性和哈希前缀打进日志（不含明文）
+    log.info("🔐 小米凭据来源概览: %s",
+             json.dumps(_token_sources_summary(), ensure_ascii=False, separators=(",", ":")))
+
     # 账号密码不再是必须的：扫码登录只留下 auth.json / .mi.token / cookie_text，
     # 而 passToken 登录路径完全不依赖账号密码（见 miservice MiAccount.login）。
     if not _has_xiaomi_credentials(cfg):
         bridge_state["error"] = "小米账号未登录，请打开配置页扫码登录"
         bridge_state["running"] = False
+        _set_xiaomi_health(False, "未检测到可用凭据")
         await _notify_xiaomi_offline(cfg, "配置中没有可用的小米账号登录凭据（passToken / cookie）")
         return
 
@@ -749,11 +784,16 @@ async def bridge_loop():
             bridge_state["error"] = ("登录失败，请打开配置页面 → 在「Cookie 登录」输入框中粘贴浏览器 Cookie → 点测试连接。"
                                      "Cookie 获取方法：浏览器打开 account.xiaomi.com → F12 → Application → Cookies → 复制全部")
             bridge_state["running"] = False
+            _set_xiaomi_health(False, "启动登录失败：passToken / Cookie / 密码三种方式均未成功")
+            log.error("❌ 小米启动登录失败：passToken / Cookie / 密码均未成功；"
+                      "请对照上面的「凭据来源概览」和 Exception on login 排查")
             await _notify_xiaomi_offline(cfg, "小米账号登录失败（passToken / Cookie / 密码三种方式均未成功）")
             return
 
         # 保存 token
         _save_auth_and_token(account)
+        _set_xiaomi_health(True, "启动登录成功")
+        log.info("✅ 小米账号登录成功（已保存 auth.json / .mi.token）")
         if na is None:
             na = MiNAService(account)
 
@@ -845,12 +885,15 @@ async def bridge_loop():
                                     for domain in ['account.xiaomi.com', '.mina.mi.com']:
                                         _bridge_session.cookie_jar.update_cookies(sc, yarl.URL(f'https://{domain}/'))
                                 log.info("重新登录成功")
+                                _set_xiaomi_health(True, "Token 过期后自动重新登录成功")
                             else:
                                 log.warning("重新登录失败")
+                                _set_xiaomi_health(False, "Token 过期后自动重新登录失败")
                                 await _notify_xiaomi_offline(
                                     load_config(), "Token 过期后自动重新登录失败")
                         except Exception as e:
                             log.warning("重新登录异常: %s", e)
+                            _set_xiaomi_health(False, f"重新登录异常: {e}")
                         await asyncio.sleep(poll_interval)
                         continue
 
@@ -1559,8 +1602,115 @@ _ERROR_HINTS = {
 }
 
 
+# ──────────────── 小米登录诊断 ────────────────
+# 面板「搜索设备」= 一次全新登录，和正在运行的 bridge_loop 用的内存会话无关。
+# 这条路径最容易暴露 token 问题，所以把每一步都记到日志里，并把可操作的提示返回给前端。
+
+def _tok_hash(value: str) -> str:
+    """凭据哈希前 8 位；日志里只出现哈希，不出现明文。"""
+    return hashlib.sha256((value or "").encode()).hexdigest()[:8] if value else "-"
+
+
+def _token_sources_summary() -> dict:
+    """本地凭据来源概览（存在性 + 哈希前缀 + 关键字段长度），用于排障日志。"""
+    mi = (load_config().get("xiaomi") or {})
+    out: dict = {
+        "auth_json": {"exists": AUTH_PATH.exists()},
+        "mi_token": {"exists": TOKEN_PATH.exists()},
+        "cookie_text": {"exists": bool((mi.get("cookie_text") or "").strip())},
+    }
+    try:
+        if AUTH_PATH.exists():
+            d = json.loads(AUTH_PATH.read_text(encoding="utf-8"))
+            out["auth_json"].update({
+                "passToken": _tok_hash(d.get("passToken")),
+                "userId": bool(d.get("userId")),
+                "deviceId": _tok_hash(d.get("deviceId")),
+            })
+    except Exception as e:
+        out["auth_json"]["error"] = str(e)[:120]
+    try:
+        if TOKEN_PATH.exists():
+            d = json.loads(TOKEN_PATH.read_text(encoding="utf-8"))
+            micoapi = d.get("micoapi") or []
+            out["mi_token"].update({
+                "passToken": _tok_hash(d.get("passToken")),
+                "has_micoapi": bool(micoapi),
+                "serviceToken_len": len(micoapi[1]) if len(micoapi) > 1 and micoapi[1] else 0,
+            })
+    except Exception as e:
+        out["mi_token"]["error"] = str(e)[:120]
+    try:
+        ct = (mi.get("cookie_text") or "")
+        if ct:
+            from http.cookies import SimpleCookie
+            sc = SimpleCookie()
+            sc.load(ct)
+            ck = {k: m.value for k, m in sc.items()}
+            out["cookie_text"].update({
+                "passToken": _tok_hash(ck.get("passToken")),
+                "serviceToken_len": len(ck.get("serviceToken") or ""),
+                "deviceId": _tok_hash(ck.get("deviceId")),
+            })
+    except Exception as e:
+        out["cookie_text"]["error"] = str(e)[:120]
+    # 三份副本是否一致：不一致往往就是"搜索设备掉线、重启掉线"的根因
+    ap = (out.get("auth_json") or {}).get("passToken")
+    out.setdefault("mi_token", {})["same_as_auth"] = bool(
+        ap and out["mi_token"].get("passToken") == ap)
+    out.setdefault("cookie_text", {})["same_as_auth"] = bool(
+        ap and out["cookie_text"].get("passToken") == ap)
+    return out
+
+
+def _set_xiaomi_health(ok: bool, detail: str = "") -> None:
+    bridge_state["xiaomi_ok"] = bool(ok)
+    bridge_state["xiaomi_checked_at"] = datetime.now().strftime("%H:%M:%S")
+    bridge_state["xiaomi_detail"] = (detail or "")[:300]
+
+
+def _login_failure_hint(attempts: list[dict], sources: dict) -> str:
+    """把登录失败翻译成用户能照着做的提示。"""
+    raw = " ".join(str(a.get("error", "")) for a in attempts)
+    hints: list[str] = []
+    if "70016" in raw or "登录验证失败" in raw:
+        hints.append(
+            "小米拒绝了保存的 passToken（70016 登录验证失败）。常见原因：passToken 被新的登录"
+            "刷新后旧副本失效、同一账号在别处登录或触发风控、扫码登录已过期。"
+            "建议重新扫码；如果仍失败，先关闭其它占用同一个小米账号的程序（如 xiaomusic）再试。")
+    if "KeyError" in raw or "Exception on login" in raw:
+        hints.append(
+            "小米登录响应缺少字段（miservice 报 KeyError），通常是 passToken 失效或账号需要安全验证。"
+            "请到「实时日志」把 Exception on login 前后 20 行发出来。")
+    if any(k in raw for k in ("Cannot connect", "Timeout", "ClientConnector", "SSL")):
+        hints.append(
+            "连接小米服务器失败。检查设备到 account.xiaomi.com / api2.mina.mi.com 的网络、DNS 或代理"
+            "（OpenWrt 上尤其注意分流规则）。")
+    ct = sources.get("cookie_text") or {}
+    aj = sources.get("auth_json") or {}
+    mt = sources.get("mi_token") or {}
+    if ct.get("exists") and not ct.get("serviceToken_len"):
+        hints.append(
+            "本地 cookie_text 里的 serviceToken 为空（扫码登录时常见），Cookie 兜底登录本来就不可用，"
+            "只能依赖 passToken。")
+    if ct.get("exists") and ct.get("passToken") and aj.get("passToken") and ct.get("passToken") != aj.get("passToken"):
+        hints.append(
+            "cookie_text 里的 passToken 和 auth.json 不一致（扫码时写入后没有更新），Cookie 兜底会用到过期凭据。"
+            "重新扫码可以生成一致的新凭据。")
+    if mt.get("passToken") and aj.get("passToken") and mt.get("passToken") != aj.get("passToken"):
+        hints.append(
+            "auth.json 与 .mi.token 里的 passToken 不一致（历史登录更新过其中一份），用旧副本登录会失败。"
+            "重新扫码可让两份重新对齐。")
+    if not hints:
+        hints.append(
+            "请到「实时日志」查看本次搜索设备前后的完整报错（关键词：搜索设备 / passToken / Cookie / "
+            "Exception on login），把相关 20 行日志发给开发者。")
+    return "\n".join(hints)
+
+
 @app.post("/api/test/xiaomi")
 async def test_xiaomi(req: TestXiaomiRequest):
+    started = time.time()
     try:
         from miservice import MiAccount, MiNAService
     except ImportError:
@@ -1581,92 +1731,156 @@ async def test_xiaomi(req: TestXiaomiRequest):
     # 三者都没有才拦下，否则一律继续尝试。
     has_saved = bool((mi.get("cookie_text") or "").strip()) or _has_xiaomi_credentials(cfg)
     if not (username and password) and not req.cookie_text and not has_saved:
-        return {"ok": False, "msg": "尚未登录，请先扫码登录"}
+        _set_xiaomi_health(False, "尚未登录")
+        return {"ok": False, "msg": "尚未登录，请先扫码登录",
+                "hint": "到「小米账号 → 生成二维码」，用米家 App 扫码登录后再点「搜索设备」。"}
 
+    sources = _token_sources_summary()
+    log.info("🔍 [搜索设备] 开始登录诊断 | 来源=%s",
+             json.dumps(sources, ensure_ascii=False, separators=(",", ":")))
+    diag: dict = {"sources": sources, "attempts": []}
+
+    def record(method: str, ok: bool, error: str = "", extra: dict | None = None) -> None:
+        item = {"method": method, "ok": ok, "ms": int((time.time() - started) * 1000)}
+        if error:
+            item["error"] = str(error)[:300]
+        if extra:
+            item.update(extra)
+        diag["attempts"].append(item)
+
+    # ── 方式0：已存 passToken（auth.json / .mi.token）──
+    # 注意：这里用临时 token 文件做 MiAccount 的 token_store。
+    # miservice 有个坑：登录失败时它会 save_token(None)，而 save_token(None) 是「删除文件」。
+    # 如果直接拿 config/.mi.token 当 store，点一次搜索就可能把有效 token 删掉——
+    # 这正好对应「点搜索设备就掉线」的反馈。用临时文件后，失败只影响临时目录。
+    import tempfile
+    from miservice.miaccount import get_random
+
+    tmpdir = tempfile.mkdtemp(prefix="xiaoai-login-")
+    tmp_token = str(Path(tmpdir) / ".mi.token")
+    s0 = aiohttp.ClientSession()
     try:
-        from miservice.miaccount import get_random
-
-        # ── 方式0：已存 passToken（auth.json / .mi.token）──
-        # 顺序与 bridge_loop 的三级尝试保持一致：passToken → Cookie → 密码。
-        # 实测 store 里的 passToken 能登录成功，而 Cookie 分支可能因 serviceToken
-        # 缺失等原因失败，所以 passToken 必须排在前面。
         try:
-            s0 = aiohttp.ClientSession()
-            try:
-                acct0 = MiAccount(s0, username, password, str(TOKEN_PATH))
-                _set_token(acct0, cfg)
-                if acct0.token.get("passToken"):
-                    log.info("尝试用已保存的 passToken 登录...")
-                    if await acct0.login("micoapi"):
-                        _save_auth_and_token(acct0)
-                        na0 = MiNAService(acct0)
-                        devices0 = await na0.device_list()
-                        if not devices0:
-                            return {"ok": True, "msg": "登录成功，但未发现小爱音箱设备", "devices": []}
-                        return {"ok": True, "msg": f"登录成功，发现 {len(devices0)} 台设备",
-                                "devices": devices0}
-            finally:
-                await s0.close()
+            acct0 = MiAccount(s0, username, password, tmp_token)
+            _set_token(acct0, cfg)
+            if not acct0.token.get("passToken"):
+                record("passToken", False, "本地没有可用的 passToken")
+                log.warning("🔍 [搜索设备] 方式0 跳过：本地没有可用的 passToken")
+            else:
+                log.info("🔍 [搜索设备] 方式0 用本地 passToken 登录（passToken=%s… deviceId=%s…）",
+                         _tok_hash(acct0.token.get("passToken")),
+                         _tok_hash(acct0.token.get("deviceId")))
+                if await acct0.login("micoapi"):
+                    _save_auth_and_token(acct0)
+                    na0 = MiNAService(acct0)
+                    devices0 = await na0.device_list()
+                    record("passToken", True)
+                    _set_xiaomi_health(True, "passToken 登录成功")
+                    log.info("✅ [搜索设备] 方式0 passToken 登录成功，发现 %d 台设备（%dms）",
+                             len(devices0 or []), int((time.time() - started) * 1000))
+                    if not devices0:
+                        return {"ok": True, "msg": "登录成功，但未发现小爱音箱设备",
+                                "devices": [], "method": "passToken", "diag": diag}
+                    return {"ok": True, "msg": f"登录成功，发现 {len(devices0)} 台设备",
+                            "devices": devices0, "method": "passToken", "diag": diag}
+                record("passToken", False, "MiAccount.login() 返回 False")
+                log.warning("❌ [搜索设备] 方式0 passToken 登录失败：login() 返回 False，"
+                            "具体异常见上一行 miservice 的 Exception on login")
         except Exception as e:
-            log.warning("已存 passToken 登录失败: %s", e)
+            record("passToken", False, f"{type(e).__name__}: {e}")
+            log.warning("❌ [搜索设备] 方式0 passToken 登录异常：%s: %s", type(e).__name__, e)
+    finally:
+        await s0.close()
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
-        # ── 方式1：浏览器 Cookie 直接登录 ──
-        cookie_text = req.cookie_text or mi.get("cookie_text", "")
-        if cookie_text and not cookie_text.startswith("https://"):
-            log.info("尝试用 Cookie 直接登录...")
-            cs = aiohttp.ClientSession()
+    # ── 方式1：浏览器 Cookie 直接登录 ──
+    cookie_text = req.cookie_text or mi.get("cookie_text", "")
+    if cookie_text and not cookie_text.startswith("https://"):
+        tmpdir1 = tempfile.mkdtemp(prefix="xiaoai-login-")
+        tmp_token1 = str(Path(tmpdir1) / ".mi.token")
+        cs = aiohttp.ClientSession()
+        try:
             try:
                 from http.cookies import SimpleCookie
                 sc = SimpleCookie()
                 sc.load(cookie_text)
                 cookies = {k: m.value for k, m in sc.items()}
-                if cookies.get('userId') and cookies.get('passToken'):
+                ct_desc = (f"userId={'有' if cookies.get('userId') else '无'} "
+                           f"passToken={_tok_hash(cookies.get('passToken'))} "
+                           f"serviceToken_len={len(cookies.get('serviceToken') or '')}")
+                log.info("🔍 [搜索设备] 方式1 用 Cookie 登录（%s）", ct_desc)
+                if not (cookies.get('userId') and cookies.get('passToken')):
+                    record("cookie", False, "cookie_text 缺少 userId 或 passToken")
+                    log.warning("❌ [搜索设备] 方式1 跳过：cookie_text 缺少 userId/passToken")
+                else:
                     import yarl
                     sc2 = SimpleCookie()
                     for k, v in cookies.items():
-                        try: sc2[k] = v
-                        except Exception: pass
+                        try:
+                            sc2[k] = v
+                        except Exception:
+                            pass
                     for domain in ['account.xiaomi.com', '.mina.mi.com']:
                         cs.cookie_jar.update_cookies(sc2, yarl.URL(f'https://{domain}/'))
-                    acct = MiAccount(cs, username, password, str(TOKEN_PATH))
+                    acct = MiAccount(cs, username, password, tmp_token1)
                     acct.token = {
                         'deviceId': cookies.get('deviceId', get_random(16).upper()),
                         'userId': cookies['userId'],
                         'passToken': cookies['passToken'],
                     }
                     resp = await acct._serviceLogin('serviceLogin?sid=micoapi&_json=true')
-                    if resp.get('code') != 0:
-                        raise Exception(f"Cookie 验证失败: {resp.get('description','')}")
-                    acct.token['userId'] = str(resp.get('userId', acct.token['userId']))
-                    acct.token['micoapi'] = (
-                        resp.get('psecurity', resp.get('ssecurity', '')),
-                        cookies.get('serviceToken', ''),
-                    )
-                    _save_auth_and_token(acct)
-                    na = MiNAService(acct)
-                    devices = await na.device_list()
-                    if not mi.get("cookie_text"):
-                        save_config({**cfg, "xiaomi": {**mi, "cookie_text": cookie_text}})
-                    await cs.close()
-                    if not devices:
-                        return {"ok": True, "msg": "Cookie 登录成功，但未发现小爱音箱设备", "devices": []}
-                    return {"ok": True, "msg": f"Cookie 登录成功，发现 {len(devices)} 台设备", "devices": devices}
+                    code = resp.get('code')
+                    desc = resp.get('description', resp.get('desc', ''))
+                    if code != 0:
+                        record("cookie", False, f"code={code} desc={desc}",
+                               {"xiaomi_code": code, "xiaomi_desc": desc})
+                        log.warning("❌ [搜索设备] 方式1 Cookie 验证失败：code=%s desc=%s", code, desc)
+                    else:
+                        # 拿到正确的 serviceToken 再落盘，避免写入空 serviceToken
+                        service_token = await acct._securityTokenService(
+                            resp['location'], resp['nonce'], resp['ssecurity'])
+                        acct.token['userId'] = str(resp.get('userId', acct.token['userId']))
+                        acct.token['passToken'] = resp.get('passToken', acct.token['passToken'])
+                        acct.token['micoapi'] = (
+                            resp.get('ssecurity', resp.get('psecurity', '')), service_token)
+                        na = MiNAService(acct)
+                        devices = await na.device_list()
+                        _save_auth_and_token(acct)
+                        if not mi.get("cookie_text"):
+                            save_config({**cfg, "xiaomi": {**mi, "cookie_text": cookie_text}})
+                        record("cookie", True)
+                        _set_xiaomi_health(True, "Cookie 登录成功")
+                        log.info("✅ [搜索设备] 方式1 Cookie 登录成功，发现 %d 台设备（%dms）",
+                                 len(devices or []), int((time.time() - started) * 1000))
+                        if not devices:
+                            return {"ok": True, "msg": "Cookie 登录成功，但未发现小爱音箱设备",
+                                    "devices": [], "method": "cookie", "diag": diag}
+                        return {"ok": True, "msg": f"Cookie 登录成功，发现 {len(devices)} 台设备",
+                                "devices": devices, "method": "cookie", "diag": diag}
             except Exception as e:
-                log.warning("Cookie 直接登录失败: %s", e)
-            finally:
-                if not cs.closed:
-                    await cs.close()
+                record("cookie", False, f"{type(e).__name__}: {e}")
+                log.warning("❌ [搜索设备] 方式1 Cookie 登录异常：%s: %s", type(e).__name__, e)
+        finally:
+            await cs.close()
+            shutil.rmtree(tmpdir1, ignore_errors=True)
 
-        # ── 方式2：纯密码登录（不加载缓存 token，避免 passToken 干扰） ──
-        # 只有配置里本来就有账号密码的老用户才会走到这里
-        if not username or not password:
-            return {"ok": False, "msg": "已保存的凭据不可用，请重新扫码登录"}
-        s = aiohttp.ClientSession()
+    # ── 方式2：纯密码登录（不加载缓存 token，避免 passToken 干扰） ──
+    if not username or not password:
+        # QR-only 用户走这里：两种保存凭据都失败
+        hint = _login_failure_hint(diag["attempts"], sources)
+        summary = " | ".join(f"{a['method']}: {a.get('error', '失败')}" for a in diag["attempts"])
+        log.error("❌ [搜索设备] 所有保存凭据均不可用：%s", summary)
+        _set_xiaomi_health(False, summary)
+        return {"ok": False, "msg": "已保存的凭据不可用，请重新扫码登录",
+                "hint": hint, "diag": diag}
+
+    s = aiohttp.ClientSession()
+    try:
         account = MiAccount(s, username, password, None)
         if not account.token or not isinstance(account.token, dict):
             account.token = {'deviceId': get_random(16).upper()}
 
-        log.info("正在密码登录 %s ...", username)
+        log.info("🔍 [搜索设备] 方式2 密码登录 %s ...", username)
         resp = await account._serviceLogin('serviceLogin?sid=micoapi&_json=true')
         if resp.get('code') != 0:
             data = {
@@ -1676,31 +1890,36 @@ async def test_xiaomi(req: TestXiaomiRequest):
                 '_sign': resp['_sign'],
                 'callback': resp['callback'],
                 'user': username,
-                'hash': __import__('hashlib').md5(password.encode()).hexdigest().upper(),
+                'hash': hashlib.md5(password.encode()).hexdigest().upper(),
             }
             resp = await account._serviceLogin('serviceLoginAuth2', data)
             if resp.get('code') != 0:
                 desc = resp.get('description', resp.get('desc', ''))
                 code = resp.get('code', '')
-                hint = _ERROR_HINTS.get(code, '')
+                err_hint = _ERROR_HINTS.get(code, '')
                 msg = f"{desc} (code:{code})"
-                if hint:
-                    msg += f"\n{hint}"
-                await s.close()
-                return {"ok": False, "msg": msg}
+                if err_hint:
+                    msg += f"\n{err_hint}"
+                record("password", False, msg, {"xiaomi_code": code, "xiaomi_desc": desc})
+                log.warning("❌ [搜索设备] 方式2 密码登录失败：%s", msg)
+                _set_xiaomi_health(False, msg)
+                return {"ok": False, "msg": msg,
+                        "hint": err_hint or "账号密码登录失败；推荐使用扫码登录。",
+                        "diag": diag}
 
-        # 需要短信验证：短信流程已随"只保留扫码"一并移除，这里给明确出路
         if resp.get('securityStatus', 0) & 16:
-            await s.close()
-            return {
-                "ok": False,
-                "msg": "该账号登录被要求短信验证，已不再支持。请改用「扫码登录」。",
-            }
+            msg = "该账号登录被要求短信验证，已不再支持。请改用「扫码登录」。"
+            record("password", False, msg, {"xiaomi_code": resp.get("code")})
+            _set_xiaomi_health(False, msg)
+            return {"ok": False, "msg": msg, "hint": msg, "diag": diag}
 
-        # 登录成功
         if not resp.get('ssecurity') or not resp.get('location'):
-            await s.close()
-            return {"ok": False, "msg": f"登录响应缺少必要字段: {list(resp.keys())}"}
+            msg = f"登录响应缺少必要字段: {list(resp.keys())}"
+            record("password", False, msg)
+            _set_xiaomi_health(False, msg)
+            return {"ok": False, "msg": msg,
+                    "hint": "小米返回的响应不完整，可能是风控或接口变更；请把实时日志发出来。",
+                    "diag": diag}
 
         account.token['userId'] = resp['userId']
         account.token['passToken'] = resp['passToken']
@@ -1712,17 +1931,23 @@ async def test_xiaomi(req: TestXiaomiRequest):
         _save_auth_and_token(account)
         na = MiNAService(account)
         devices = await na.device_list()
-        await s.close()
+        record("password", True)
+        _set_xiaomi_health(True, "密码登录成功")
+        log.info("✅ [搜索设备] 方式2 密码登录成功，发现 %d 台设备（%dms）",
+                 len(devices or []), int((time.time() - started) * 1000))
         if not devices:
-            return {"ok": True, "msg": "登录成功，但未发现小爱音箱设备", "devices": []}
-        return {
-            "ok": True,
-            "msg": f"登录成功，发现 {len(devices)} 台设备",
-            "devices": devices,
-        }
+            return {"ok": True, "msg": "登录成功，但未发现小爱音箱设备",
+                    "devices": [], "method": "password", "diag": diag}
+        return {"ok": True, "msg": f"登录成功，发现 {len(devices)} 台设备",
+                "devices": devices, "method": "password", "diag": diag}
     except Exception as e:
-        log.exception("test_xiaomi 异常: %s", e)
-        return {"ok": False, "msg": f"请求失败: {e}"}
+        record("password", False, f"{type(e).__name__}: {e}")
+        log.exception("❌ [搜索设备] 方式2 密码登录异常: %s", e)
+        _set_xiaomi_health(False, f"{type(e).__name__}: {e}")
+        return {"ok": False, "msg": f"请求失败: {e}",
+                "hint": _login_failure_hint(diag["attempts"], sources), "diag": diag}
+    finally:
+        await s.close()
 
 
 # ──────────────── HA 设备列表 ────────────────

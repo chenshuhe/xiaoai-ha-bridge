@@ -624,6 +624,8 @@ body{
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .toast.err{border-color:var(--red-border);color:var(--red)}
 
+.alert{white-space:pre-wrap;word-break:break-word;line-height:1.7}
+
 </style>
 </head>
 <body>
@@ -691,6 +693,7 @@ body{
     <!-- ── Status ── -->
     <div class="status-card">
       <div class="status-row"><span class="status-key">Bridge</span><span class="status-value"><div class="status-dot" id="dot-bridge"></div><span id="txt-bridge">离线</span></span></div>
+      <div class="status-row"><span class="status-key">小米</span><span class="status-value"><div class="status-dot" id="dot-xiaomi"></div><span id="txt-xiaomi">&mdash;</span></span></div>
       <div class="status-row"><span class="status-key">HA</span><span class="status-value"><div class="status-dot" id="dot-ha"></div><span id="txt-ha">&mdash;</span></span></div>
       <div class="status-row"><span class="status-key">Commands</span><span class="status-value"><span id="txt-count">0</span></span></div>
     </div>
@@ -1054,6 +1057,15 @@ async function fetchStatus(){try{const r=await fetch('/api/status');const s=awai
 function updateStatusUI(s){
   const r=s.running,h=s.connected;
   setDot('dot-bridge',r?'ok':'');document.getElementById('txt-bridge').textContent=r?'运行中':'离线';
+  // 小米登录态和桥接器运行状态是两回事：控制走内存会话，搜索设备/重启才需要重新登录
+  const x=s.xiaomi_ok;
+  setDot('dot-xiaomi',x===true?'ok':(x===false?'err':''));
+  const xt=document.getElementById('txt-xiaomi');
+  if(xt){
+    xt.textContent=x===true?'正常':(x===false?'掉线':'—');
+    xt.title=(x===false&&s.xiaomi_detail)?('最近检测 '+ (s.xiaomi_checked_at||'') +'，'+s.xiaomi_detail):
+             (x===true?('最近检测 '+(s.xiaomi_checked_at||'')):'');
+  }
   setDot('dot-ha',h?'ok':(r?'err':''));document.getElementById('txt-ha').textContent=h?'已连接':'—';
   document.getElementById('txt-count').textContent=s.command_count||0;
   document.getElementById('dc-count').textContent=s.command_count||0;
@@ -1162,6 +1174,18 @@ async function pollQrLogin(){try{const r=await fetch('/api/qr/poll');const d=awa
 function renderDeviceList(devices){const box=document.getElementById('mi-device-list');const c=document.getElementById('mi-devices');const ce=document.getElementById('mi-device-count');box.style.display='';ce.textContent='('+devices.length+'台)';c.innerHTML=devices.map(d=>{const n=escHtml(d.name||'未知');const h=escHtml(d.hardware||d.model||'');const did=escHtml(d.deviceID||d.did||'');return'<div class="rule-item" style="cursor:pointer" onclick="selectDevice(\''+escAttr(h)+'\',\''+escAttr(did)+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><span style="color:var(--txt-primary);font-size:14px;font-weight:500">'+n+'</span><span style="color:var(--txt-muted);font-size:11px;margin-left:10px">'+h+'</span></div><span style="color:var(--txt-dim);font-size:10px;font-family:JetBrains Mono,monospace">DID: '+(did?did.substring(0,12)+'...':'—')+'</span></div></div>'}).join('');if(devices.length>0){const f=devices[0];selectDevice(f.hardware||f.model||'',f.deviceID||f.did||'')}}
 function selectDevice(hw,did){if(hw)document.getElementById('mi-hardware').value=hw;if(did)document.getElementById('mi-did').value=did}
 // 用已保存的凭据拉取音箱列表。扫码成功后也会走这里，避免两处重复。
+function fmtLoginDiag(d){
+  if(!d||!d.diag)return '';
+  const src=d.diag.sources||{};
+  const aj=src.auth_json||{},mt=src.mi_token||{},ct=src.cookie_text||{};
+  let s='\n\n凭据来源（哈希前 8 位，不含明文）：';
+  s+='\n· auth.json：'+(aj.exists?('passToken '+aj.passToken+'，userId '+(aj.userId?'有':'无')):'不存在');
+  s+='\n· .mi.token：'+(mt.exists?('passToken '+mt.passToken+'，serviceToken 长度 '+(mt.serviceToken_len||0)):'不存在');
+  s+='\n· cookie_text：'+(ct.exists?('passToken '+ct.passToken+'，serviceToken 长度 '+(ct.serviceToken_len||0)):'未配置');
+  const at=(d.diag.attempts||[]).map(a=>'· '+a.method+(a.ok?' 成功':' 失败')+(a.error?'：'+a.error:'')).join('\n');
+  if(at)s+='\n\n登录尝试：\n'+at;
+  return s;
+}
 async function searchDevices(){
   const a=document.getElementById('xiaomi-alert');
   showAlert(a,'warn','⟳ 正在获取设备列表...');
@@ -1169,11 +1193,18 @@ async function searchDevices(){
     const r=await fetch('/api/test/xiaomi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({use_saved:true})});
     const d=await r.json();
     if(d.ok){
-      showAlert(a,'ok','✓ '+(d.msg||'获取成功'));
+      let msg='✓ '+(d.msg||'获取成功');
+      if(d.method)msg+='（方式：'+({passToken:'passToken',cookie:'Cookie',password:'密码'}[d.method]||d.method)+'）';
+      showAlert(a,'ok',msg);
       if(d.devices&&d.devices.length>0)renderDeviceList(d.devices);
       else showAlert(a,'warn','⚠ 账号下没有找到小爱音箱，请先在米家 App 里添加');
     }else{
-      showAlert(a,'err','✗ '+(d.msg||'获取失败')+' —— 若登录已失效，请重新扫码');
+      let msg='✗ '+(d.msg||'获取失败');
+      if(d.hint)msg+='\n\n建议：'+d.hint;
+      msg+=fmtLoginDiag(d);
+      msg+='\n\n详细日志见「实时日志」，关键词：搜索设备 / passToken / Exception on login';
+      showAlert(a,'err',msg);
+      toast('小米账号登录失败，详情见上方提示','err');
     }
   }catch(e){showAlert(a,'err','✗ '+e.message)}
 }
