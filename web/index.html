@@ -802,7 +802,7 @@ body{
         <div class="test-row"><input type="text" id="test-input" placeholder="如「打开客厅灯」" onkeydown="if(event.key==='Enter')testRule()"><button class="btn btn-primary" onclick="testRule()">测试</button></div>
         <div class="test-result" id="test-result">点击测试查看匹配</div>
       </div>
-      <div class="hint-line">💡 实体 ID 不用手抄：编辑规则时点「选择设备」直接从 HA 设备列表挑选；也可以到「设备管理」点设备 ID 一键复制。设备类型已补齐风扇、按键、窗帘、门锁、扫地机、加湿器、热水器等，风量 / 摇头 / 扫风 / 位置都能配。</div>
+      <div class="hint-line">💡 实体 ID 不用手抄：编辑规则时点「选择设备」直接从 HA 设备列表挑选；也可以到「设备管理」点设备 ID 一键复制。设备类型已补齐风扇、按键、窗帘、门锁、扫地机、加湿器、热水器等，风量 / 摇头 / 扫风 / 位置都能配。<br>{num} 现在同时支持阿拉伯数字和中文数字（42 / 四十二 / 二十三点五 / 百分之五十）。</div>
       <div class="btn-group">
         <button class="btn btn-primary" onclick="addRule()">+新增</button>
         <button class="btn btn-primary" onclick="saveRules()">&darr;保存</button>
@@ -1408,7 +1408,7 @@ function buildRule(rule,i){
   div.dataset.idx=i;
   let h='<div class="rule-head"><span class="rule-num">#'+(i+1)+'</span><button class="rule-del" onclick="deleteRule('+i+')">✕</button></div>';
   h+='<div class="rule-grid">';
-  h+='<div class="field full"><label>你说的话（正则，{num} 匹配数字）</label><input type="text" class="r-p" value="'+escHtml(rule.pattern||'')+'" placeholder="打开客厅灯"></div>';
+  h+='<div class="field full"><label>你说的话（正则，{num} 支持 42 / 四十二）</label><input type="text" class="r-p" value="'+escHtml(rule.pattern||'')+'" placeholder="打开客厅灯"></div>';
   h+='<div class="field" style="grid-column:1/-1"><label>设备类型</label><div class="domain-select">';
   DINFO_KEYS.forEach(k=>{const v=DINFO[k];h+='<button class="domain-btn'+(k===d?' active':'')+'" data-dom="'+k+'" onclick="switchD(this,\''+k+'\')"><span class="domain-icon">'+v.icon+'</span>'+v.name+'</button>'});
   h+='</div><input type="hidden" class="r-d" value="'+escHtml(d)+'"></div>';

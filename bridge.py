@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.12.2"
+VERSION = "3.12.3"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -243,28 +243,142 @@ def _default_config() -> dict:
     }
 
 
+# ──────────────── 中文数字归一化 ────────────────
+# 小爱的语音识别结果经常把阿拉伯数字写成中文（"42" → "四十二"），而
+# {num} 会被替换成正则 (\d+)，导致规则匹配不上。这里在匹配前把"数字短语"
+# 归一化成阿拉伯数字。
+#
+# 边界（有意保守）：
+#   · 只有"后面紧跟单位"或"前面是动作/数值关键词"时才转换；
+#   · "二楼灯""一起""万一""十分满意"这类词不会被改（"楼/起/分"不在单位表里）；
+#   · "三点一刻""七点半"这类时间口语不强行转换（点后面跟 刻/分/半 时跳过）；
+#   · 规则本身写死中文数字时，parse 会先试归一化文本、再回退原文，不会失效。
+_CN_DIGITS = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+              "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_CN_UNIT_CHARS = {"十": 10, "百": 100, "千": 1000, "万": 10000}
+_CN_NUM_CHARS = "零一二两三四五六七八九十百千万"
+_CN_NUM_RUN = re.compile(rf"[{_CN_NUM_CHARS}]+(?:点[零一二三四五六七八九]+)?")
+# 数字后面紧跟的量词/单位（按长度优先排列，避免"厘米"被"米"抢先）
+_CN_UNIT_AFTER = re.compile(
+    "(?:" + "|".join([
+        "摄氏度", "厘米", "毫米", "毫升", "千克", "千瓦", "分钟", "小时",
+        "度", "℃", "%", "％", "秒", "个", "档", "级", "层", "米", "元", "块",
+        "岁", "倍", "次", "台", "克", "斤", "升", "瓦", "伏", "安", "天", "周",
+        "月", "年",
+    ]) + ")"
+)
+# 数字前面是这些词时也可以安全转换（覆盖"调到四十二"这种没有单位的说法）
+_CN_PRE_CTX = re.compile(
+    r"(?:" + "|".join([
+        "增加到", "减少到", "提高到", "降低到", "设置到", "设置为", "设置成",
+        "调到", "调至", "调成", "设到", "设成", "改为", "改成", "开到", "关到",
+        "升到", "降到", "高到", "低到", "百分之", "千分之", "万分之", "定时", "延迟", "等待", "间隔",
+        "温度", "水温", "湿度", "音量", "亮度", "风速", "风量", "角度", "位置",
+        "开度", "档位", "第", "到", "为", "等于", "约", "大概",
+    ]) + r")\s*$"
+)
+
+
+def _cn_num_to_int(text: str) -> int | None:
+    """把纯中文整数转换为 int，例如 四十二→42、一百零五→105、两→2。"""
+    if not text:
+        return None
+    total = 0       # 已结算的"万"以上部分
+    section = 0     # 当前 section（万以下）
+    number = 0
+    for ch in text:
+        if ch in _CN_DIGITS:
+            number = _CN_DIGITS[ch]
+        elif ch in _CN_UNIT_CHARS:
+            unit = _CN_UNIT_CHARS[ch]
+            if number == 0:
+                number = 1
+            if unit == 10000:
+                total += (section + number) * unit
+                section = 0
+            else:
+                section += number * unit
+            number = 0
+        else:
+            return None
+    return total + section + number
+
+
+def _cn_num_to_number(text: str) -> int | float | None:
+    """支持整数与"一点五"这类小数；无法解析返回 None。"""
+    if "点" in text:
+        left, right = text.split("点", 1)
+        left_val = _cn_num_to_int(left) if left else 0
+        if left_val is None:
+            return None
+        digits = "".join(str(_CN_DIGITS[c]) for c in right if c in _CN_DIGITS)
+        if not digits:
+            return None
+        val = float(f"{left_val}.{digits}")
+        return int(val) if val.is_integer() else val
+    return _cn_num_to_int(text)
+
+
+def _normalize_chinese_numerals(text: str) -> str:
+    """把数字语境下的中文数字归一化成阿拉伯数字；非数字语境原样保留。"""
+    if not text or not any(ch in text for ch in _CN_NUM_CHARS):
+        return text
+
+    def repl(m: re.Match) -> str:
+        raw = m.group(0)
+        start, end = m.span()
+        after = text[end:]
+        # "百分之五十 / 千分之五"里的"百/千"是固定搭配，不能单独转成 100/1000
+        if after.startswith("分之"):
+            return raw
+        # 时间口语"三点一刻""三点五分"不转换，避免 3.1 刻这种误解
+        if "点" in raw and after[:1] in ("刻", "分", "半"):
+            return raw
+        has_unit = bool(_CN_UNIT_AFTER.match(after))
+        has_pre = bool(_CN_PRE_CTX.search(text[:start]))
+        if not (has_unit or has_pre):
+            return raw
+        val = _cn_num_to_number(raw)
+        return raw if val is None else str(val)
+
+    return _CN_NUM_RUN.sub(repl, text)
+
+
 # ──────────────── 意图解析 ────────────────
 class IntentParser:
     def __init__(self, rules: list[dict]):
         self.rules = rules
 
     def parse(self, text: str) -> dict | None:
-        text = text.strip()
-        for rule in self.rules:
-            pattern = rule["pattern"].replace("{num}", r"(\d+)")
-            m = re.search(pattern, text, re.IGNORECASE)
-            if m:
-                action = dict(rule["action"])
-                groups = m.groups()
-                for key, val in action.items():
-                    if isinstance(val, str):
-                        for i, g in enumerate(groups):
-                            val = val.replace(f"{{{i}}}", g or "")
-                        # reply 是给人听的文案，原样保留（但要先替换 {0} 占位符），
-                        # 不能被 "开/关" 这类词转成布尔值
-                        action[key] = val if key == "reply" else self._convert_value(val, key)
-                return action
+        original = (text or "").strip()
+        normalized = _normalize_chinese_numerals(original)
+        # 先试归一化文本；没匹配再回退原文，保证写死中文数字的老规则不失效
+        candidates = [normalized] if normalized == original else [normalized, original]
+        for candidate in candidates:
+            for rule in self.rules:
+                action = self._match_rule(rule, candidate)
+                if action is not None:
+                    if candidate != original:
+                        log.info("🔢 中文数字归一化后匹配: %s → %s", original, normalized)
+                    return action
         return None
+
+    def _match_rule(self, rule: dict, text: str) -> dict | None:
+        # 支持整数与小数（中文数字归一化后可能是 23.5）
+        pattern = rule["pattern"].replace("{num}", r"(\d+(?:\.\d+)?)")
+        m = re.search(pattern, text, re.IGNORECASE)
+        if not m:
+            return None
+        action = dict(rule["action"])
+        groups = m.groups()
+        for key, val in action.items():
+            if isinstance(val, str):
+                for i, g in enumerate(groups):
+                    val = val.replace(f"{{{i}}}", g or "")
+                # reply 是给人听的文案，原样保留（但要先替换 {0} 占位符），
+                # 不能被 "开/关" 这类词转成布尔值
+                action[key] = val if key == "reply" else self._convert_value(val, key)
+        return action
 
     # 这些参数在 HA 里是布尔值；其它参数（如 climate 的 swing_mode="on"）
     # 的 "on/off" 是枚举字符串，不能一律转成 True/False
