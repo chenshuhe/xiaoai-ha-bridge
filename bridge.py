@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.12.3"
+VERSION = "3.12.4"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -78,6 +78,122 @@ log = logging.getLogger(__name__)
 # 接入 miservice 库的 DEBUG 日志，便于诊断登录问题
 logging.getLogger("miservice").setLevel(logging.INFO)
 logging.getLogger("miservice.miaccount").setLevel(logging.INFO)
+
+
+# ──────────────── miservice 登录加固补丁 ────────────────
+# 上游 miservice 有两个会让登录态"越修越坏"的行为：
+#   1. mi_request 收到 401 时直接 self.token = None，随后 login() 只能拿
+#      deviceId 去走密码登录；当前小米风控下密码登录不返回 userId，触发
+#      KeyError: 'userId'，异常分支还会把 .mi.token 删掉。
+#   2. 只有库内部保存 .mi.token，auth.json 不会同步；passToken 轮换后
+#      auth.json 变旧，下次启动/桥接重登就会失败。
+# 进程启动时打两个补丁：401 重登保留 passToken/userId/deviceId；任何登录
+# 成功都同步写回 auth.json + .mi.token。
+def _patch_miservice_login() -> None:
+    try:
+        from miservice.miaccount import MiAccount as _MiAccount
+    except Exception:  # miservice 未安装时不影响其他功能
+        return
+    if getattr(_MiAccount, "_bridge_patched", False):
+        return
+
+    async def _login(self, sid):
+        from miservice.miaccount import get_random as _get_random
+
+        if not self.token:
+            self.token = {"deviceId": _get_random(16).upper()}
+        try:
+            resp = await self._serviceLogin(f"serviceLogin?sid={sid}&_json=true")
+            if resp["code"] != 0:
+                if self.token.get("passToken"):
+                    # passToken 失效时不再走密码登录：当前小米要求短信验证，
+                    # 密码尝试会触发风控，且响应缺 userId 会抛 KeyError: 'userId'。
+                    raise Exception(
+                        f"passToken 已失效（code={resp.get('code')}: "
+                        f"{resp.get('description')}），请到 Web 配置页重新扫码登录"
+                    )
+                data = {
+                    "_json": "true",
+                    "qs": resp["qs"],
+                    "sid": resp["sid"],
+                    "_sign": resp["_sign"],
+                    "callback": resp["callback"],
+                    "user": self.username,
+                    "hash": hashlib.md5(self.password.encode()).hexdigest().upper(),
+                }
+                resp = await self._serviceLogin("serviceLoginAuth2", data)
+                if resp["code"] != 0:
+                    raise Exception(resp)
+
+            self.token["userId"] = resp["userId"]
+            self.token["passToken"] = resp["passToken"]
+
+            serviceToken = await self._securityTokenService(
+                resp["location"], resp["nonce"], resp["ssecurity"]
+            )
+            self.token[sid] = (resp["ssecurity"], serviceToken)
+            if self.token_store:
+                self.token_store.save_token(self.token)
+            if self.token.get("passToken"):
+                try:
+                    # 同步 auth.json，避免多份副本新旧不一致
+                    _save_auth_and_token(self)
+                except Exception as e:
+                    log.warning("登录成功后同步 auth.json 失败: %s", e)
+            return True
+        except KeyError as e:
+            # 响应里没有 userId：多半是被要求短信/验证码，密码登录走不通
+            log.error("小米账号登录失败: 响应缺少 %s（账号可能被要求短信/验证码，请扫码登录）", e)
+            return False
+        except Exception as e:
+            # 刻意不清空 token、不删除 .mi.token：上游的删除行为会让后续
+            # 播报连"拿旧凭据重试"的机会都没有，还会连带 auth.json 一起变旧。
+            log.error("小米账号登录失败: %s", e)
+            return False
+
+    async def _mi_request(self, sid, url, data, headers, relogin=True):
+        headers["User-Agent"] = self.now_ua
+        if (self.token and sid in self.token) or await self.login(sid):
+            cookies = {
+                "userId": self.token["userId"],
+                "serviceToken": self.token[sid][1],
+            }
+            content = data(self.token, cookies) if callable(data) else data
+            method = "GET" if data is None else "POST"
+            log.info("%s %s", url, content)
+            async with self.session.request(
+                method, url, data=content, cookies=cookies, headers=headers
+            ) as r:
+                status = r.status
+                if status == 200:
+                    resp = await r.json(content_type=None)
+                    code = resp["code"]
+                    if code == 0:
+                        return resp
+                    if "auth" in resp.get("message", "").lower():
+                        status = 401
+                else:
+                    resp = await r.text()
+            if status == 401 and relogin:
+                log.warning("Auth error on request %s, relogin...", url)
+                # 关键：保留登录凭据，别让 login() 退化成密码登录
+                self.token = {
+                    k: self.token[k]
+                    for k in ("userId", "passToken", "deviceId")
+                    if self.token and self.token.get(k)
+                } or None
+                return await _mi_request(self, sid, url, data, headers, False)
+        else:
+            resp = "Login failed"
+        raise Exception(f"Error {url}: {resp}")
+
+    _MiAccount.login = _login
+    _MiAccount.mi_request = _mi_request
+    _MiAccount._bridge_patched = True
+    log.info("已应用 miservice 登录加固补丁")
+
+
+_patch_miservice_login()
 
 # ──────────────── 运行状态 ────────────────
 bridge_state = {
@@ -570,6 +686,23 @@ def _save_auth_and_token(account) -> None:
         log.warning("保存 .mi.token 失败: %s", e)
 
 
+def _load_login_token() -> dict:
+    """读取可用登录 token：优先 auth.json，再退回 .mi.token。
+
+    .mi.token 可能被 miservice 在登录异常时删掉，而 auth.json 是桥接器自己
+    维护的兜底副本；只读 .mi.token 会让 TTS 在登录失效后彻底没救。
+    """
+    for path in (AUTH_PATH, TOKEN_PATH):
+        try:
+            if path.exists():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and data.get("passToken"):
+                    return data
+        except Exception as e:
+            log.warning("读取登录 token 失败 (%s): %s", path, e)
+    return {}
+
+
 def _get_cookie(cfg: dict) -> dict | None:
     """从 .mi.token 或配置的 cookie_text 构建 Cookie（参考 xiaomusic get_cookie）"""
     mi_cfg = cfg.get("xiaomi", {})
@@ -888,6 +1021,10 @@ async def bridge_loop():
         if not logged_in:
             log.info("尝试密码登录...")
             try:
+                # miservice 补丁在 passToken 失效时不会清空 token（那样会把凭据
+                # 一起弄丢）。密码登录必须显式丢掉失效的 passToken，否则会被
+                # 补丁的"passToken 存在就不走密码"规则拦住。
+                account.token = {"deviceId": get_random(16).upper()}
                 ok = await account.login("micoapi")
                 if ok:
                     logged_in = True
@@ -895,8 +1032,9 @@ async def bridge_loop():
                 log.warning("密码登录异常: %s", e)
 
         if not logged_in:
-            bridge_state["error"] = ("登录失败，请打开配置页面 → 在「Cookie 登录」输入框中粘贴浏览器 Cookie → 点测试连接。"
-                                     "Cookie 获取方法：浏览器打开 account.xiaomi.com → F12 → Application → Cookies → 复制全部")
+            bridge_state["error"] = ("登录失败：小米账号凭据已失效。请打开配置页 → 小米账号 → 点「生成二维码」，"
+                                     "用米家 App 扫码登录（扫码成功后桥接会自动启动）。"
+                                     "如果扫码也提示验证失败，先在浏览器登录 account.xiaomi.com 完成安全验证。")
             bridge_state["running"] = False
             _set_xiaomi_health(False, "启动登录失败：passToken / Cookie / 密码三种方式均未成功")
             log.error("❌ 小米启动登录失败：passToken / Cookie / 密码均未成功；"
@@ -1312,14 +1450,17 @@ async def _xiaomi_tts(text: str) -> bool:
                 if _tts_na_session is None or _tts_na_session.closed:
                     _tts_na_session = aiohttp.ClientSession()
                 token_path = CONFIG_PATH.parent / ".mi.token"
-                if token_path.exists():
-                    token = json.loads(token_path.read_text())
-                else:
-                    token = {"deviceId": get_random(16).upper()}
+                token = _load_login_token() or {"deviceId": get_random(16).upper()}
                 account = MiAccount(_tts_na_session, mi_cfg.get("username") or "",
                                     mi_cfg.get("password") or "", str(token_path))
                 account.token = token
                 _tts_na = MiNAService(account)
+            else:
+                # 别处登录成功后 passToken 会轮换，缓存账号里的旧 token 会立刻失效
+                fresh = _load_login_token()
+                cached = getattr(_tts_na.account, "token", None) or {}
+                if fresh.get("passToken") and fresh.get("passToken") != cached.get("passToken"):
+                    _tts_na.account.token = fresh
 
             # 获取/复用音箱 device_id（优先用配置指定）
             if not _tts_device_id:
@@ -3438,6 +3579,11 @@ async def qr_login_poll():
             save_config(cfg)
             _qr_state.clear()
             log.info("QR 扫码登录成功! userId=%s", auth_data["userId"])
+            # 登录失效时桥接会停掉；扫码成功后自动把它拉起来，省一步手动点「启动」
+            try:
+                await start_bridge()
+            except Exception as e:
+                log.warning("扫码成功，但自动启动桥接失败: %s", e)
             await s.close()
             return {"ok": True, "done": True, "msg": f"扫码登录成功! userId={auth_data['userId']}"}
         else:
@@ -3685,10 +3831,7 @@ async def tts_speak(req: TTSRequest):
         
         token_path = CONFIG_PATH.parent / ".mi.token"
         async with aiohttp.ClientSession() as session:
-            if token_path.exists():
-                token = json.loads(token_path.read_text())
-            else:
-                token = {"deviceId": get_random(16).upper()}
+            token = _load_login_token() or {"deviceId": get_random(16).upper()}
             
             account = MiAccount(session, mi_cfg.get("username") or "", mi_cfg.get("password") or "", str(token_path))
             account.token = token
