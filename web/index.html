@@ -1154,14 +1154,24 @@ async function applyUpdateRemote(){
   }catch(e){s.style.color='var(--orange)';s.textContent='⚠ 连接中断（可能正在重启），刷新页面后确认版本';b.disabled=false}
 }
 
-async function saveRules(){const r=collectRulesFromUI();await saveCfg('rules');toast('已保存 '+r+' 条规则')}
+// 规则单独走 /api/rules：只写 intent_rules，不会把页面里的旧登录凭据带回配置
+async function saveRules(){
+  const n=collectRulesFromUI();const a=document.getElementById('rules-alert');
+  try{
+    const r=await fetch('/api/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rules:cfg.intent_rules||[]})});
+    const d=await r.json();
+    if(d.ok){showAlert(a,'ok','✓ 已保存 '+n+' 条规则（立即生效，无需重启）');toast('已保存 '+n+' 条规则')}
+    else{showAlert(a,'err','✗ '+(d.msg||'保存失败'))}
+  }catch(e){showAlert(a,'err','✗ '+e.message)}
+  setTimeout(()=>a.classList.remove('show'),3500);
+}
 async function saveCfg(sec){
   const map={xiaomi:'xiaomi-alert',ha:'ha-alert',rules:'rules-alert',adv:'adv-alert'};
   const a=document.getElementById(map[sec]||'dash-alert');
   try{
     const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:cfg})});
     const d=await r.json();
-    if(d.ok){showAlert(a,'ok','✓ 保存成功')}
+    if(d.ok){showAlert(a,'ok','✓ 保存成功');await loadConfig()}
     else{showAlert(a,'err','✗ '+(d.msg||'保存失败'))}
   }catch(e){showAlert(a,'err','✗ '+e.message)}
   setTimeout(()=>a.classList.remove('show'),3500);
@@ -1169,7 +1179,10 @@ async function saveCfg(sec){
 
 // ═══════════ Xiaomi ═══════════
 async function qrLogin(){const a=document.getElementById('xiaomi-alert');showAlert(a,'warn','⟳ 生成二维码...');try{const r=await fetch('/api/qr/login',{method:'POST'});const d=await r.json();if(d.ok&&d.qr_url){document.getElementById('qr-img').src=d.qr_url;document.getElementById('qr-area').style.display='';document.getElementById('qr-msg').textContent='用米家 App 扫码';document.getElementById('qr-status').textContent='等待扫码...';showAlert(a,'warn','📱 扫码');if(qrPollTimer)clearInterval(qrPollTimer);qrPollTimer=setInterval(pollQrLogin,3000)}else{showAlert(a,'err','✗ '+(d.msg||'失败'))}}catch(e){showAlert(a,'err','✗ '+e.message)}}
-async function pollQrLogin(){try{const r=await fetch('/api/qr/poll');const d=await r.json();if(d.done){clearInterval(qrPollTimer);document.getElementById('qr-status').textContent=d.msg;document.getElementById('qr-area').style.display='none';const a=document.getElementById('xiaomi-alert');showAlert(a,'ok','✓ '+d.msg);searchDevices()}else if(!d.ok){document.getElementById('qr-status').textContent=d.msg||'错误'}}catch(e){}}
+async function pollQrLogin(){try{const r=await fetch('/api/qr/poll');const d=await r.json();if(d.done){clearInterval(qrPollTimer);document.getElementById('qr-status').textContent=d.msg;document.getElementById('qr-area').style.display='none';const a=document.getElementById('xiaomi-alert');showAlert(a,'ok','✓ '+d.msg);
+  // 扫码成功后后端已写新的 cookie_text，必须刷新内存里的 cfg，
+  // 否则之后保存任何页面都会把旧的凭据写回去（重启就掉登录）
+  await loadConfig();searchDevices()}else if(!d.ok){document.getElementById('qr-status').textContent=d.msg||'错误'}}catch(e){}}
 
 function renderDeviceList(devices){const box=document.getElementById('mi-device-list');const c=document.getElementById('mi-devices');const ce=document.getElementById('mi-device-count');box.style.display='';ce.textContent='('+devices.length+'台)';c.innerHTML=devices.map(d=>{const n=escHtml(d.name||'未知');const h=escHtml(d.hardware||d.model||'');const did=escHtml(d.deviceID||d.did||'');return'<div class="rule-item" style="cursor:pointer" onclick="selectDevice(\''+escAttr(h)+'\',\''+escAttr(did)+'\')"><div style="display:flex;align-items:center;justify-content:space-between"><div><span style="color:var(--txt-primary);font-size:14px;font-weight:500">'+n+'</span><span style="color:var(--txt-muted);font-size:11px;margin-left:10px">'+h+'</span></div><span style="color:var(--txt-dim);font-size:10px;font-family:JetBrains Mono,monospace">DID: '+(did?did.substring(0,12)+'...':'—')+'</span></div></div>'}).join('');if(devices.length>0){const f=devices[0];selectDevice(f.hardware||f.model||'',f.deviceID||f.did||'')}}
 function selectDevice(hw,did){if(hw)document.getElementById('mi-hardware').value=hw;if(did)document.getElementById('mi-did').value=did}

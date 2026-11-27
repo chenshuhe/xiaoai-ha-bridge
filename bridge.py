@@ -31,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # ──────────────── 常量 ────────────────
-VERSION = "3.12.4"
+VERSION = "3.12.5"
 CONFIG_PATH = Path("config/config.yaml")
 LOG_PATH = Path("logs/bridge.log")
 TOKEN_PATH = Path("config/.mi.token")
@@ -213,6 +213,8 @@ bridge_state = {
 
 _bridge_task: asyncio.Task | None = None
 _bridge_session: aiohttp.ClientSession | None = None
+# 运行中的规则解析器：保存意图规则后直接热更新，不必重启桥接器
+_active_parser: "IntentParser | None" = None
 
 
 # ──────────────── 配置 ────────────────
@@ -607,24 +609,64 @@ class HAClient:
 
 
 # ──────────────── 桥接主循环 ────────────────
+def _read_json_dict(path) -> dict:
+    """读取 JSON 对象文件；不存在/损坏时返回 {}，不抛异常。"""
+    try:
+        if Path(path).exists():
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+    except Exception as e:
+        log.warning("读取 %s 失败: %s", path, e)
+    return {}
+
+
+def _cookie_pass_token(cookie_text: str) -> str:
+    """从 cookie_text 里取出 passToken（只用于判断副本新旧，不落日志）。"""
+    try:
+        from http.cookies import SimpleCookie
+        sc = SimpleCookie()
+        sc.load(cookie_text or "")
+        return sc["passToken"].value if "passToken" in sc else ""
+    except Exception:
+        return ""
+
+
+def _has_mina_session(token: dict | None) -> bool:
+    """token 里是否带着可复用的 micoapi 会话（ssecurity + serviceToken）。"""
+    if not isinstance(token, dict):
+        return False
+    sess = token.get("micoapi")
+    return bool(isinstance(sess, (list, tuple)) and len(sess) > 1 and sess[1])
+
+
 def _set_token(account, cfg: dict):
-    """从 auth.json 或 cookie 恢复 token（参考 xiaomusic set_token）"""
+    """从 auth.json / cookie_text / .mi.token 恢复 token（参考 xiaomusic set_token）。
+
+    .mi.token 里除了 passToken 还保存着 micoapi 的 (ssecurity, serviceToken)。
+    旧实现整份替换 account.token，会把 serviceToken 丢掉，进程重启后只能拿
+    passToken 重新登录；而 passToken 经常已被小米轮换/作废（code=70016），
+    于是「一重启就掉登录」。现在改成合并：保留 .mi.token 里的会话，
+    只覆盖登录身份字段。
+    """
     mi_cfg = cfg.get("xiaomi", {})
-    if AUTH_PATH.exists():
-        try:
-            with open(AUTH_PATH, encoding="utf-8") as f:
-                user_data = json.load(f)
-            account.token = {
-                "passToken": user_data["passToken"],
-                "userId": user_data["userId"],
-                "deviceId": user_data.get("deviceId", ""),
-            }
-            log.info("已从 auth.json 恢复 token（passToken=%s… userId=%s）",
-                     _tok_hash(account.token.get("passToken")),
-                     "有" if account.token.get("userId") else "无")
-            return
-        except Exception as e:
-            log.warning("auth.json 读取失败: %s", e)
+    token = dict(account.token) if isinstance(account.token, dict) else {}
+    # MiAccount 构造时一般已从 .mi.token 读到完整会话；搜索设备用临时
+    # token 文件时 account.token 是空的，这里再补读一次。
+    for k, v in _read_json_dict(TOKEN_PATH).items():
+        token.setdefault(k, v)
+
+    auth = _read_json_dict(AUTH_PATH)
+    if auth.get("passToken"):
+        for k in ("passToken", "userId", "deviceId"):
+            if auth.get(k):
+                token[k] = auth[k]
+        account.token = token
+        log.info("已从 auth.json 恢复 token（passToken=%s… userId=%s，serviceToken=%s）",
+                 _tok_hash(token.get("passToken")),
+                 "有" if token.get("userId") else "无",
+                 "有" if _has_mina_session(token) else "无")
+        return
 
     cookie_text = mi_cfg.get("cookie_text", "")
     if cookie_text:
@@ -632,14 +674,20 @@ def _set_token(account, cfg: dict):
         sc = SimpleCookie()
         sc.load(cookie_text)
         cookies_dict = {k: m.value for k, m in sc.items()}
-        account.token = {
-            "passToken": cookies_dict.get("passToken", ""),
-            "userId": cookies_dict.get("userId", ""),
-            "deviceId": cookies_dict.get("deviceId", ""),
-        }
+        for k, v in (("passToken", cookies_dict.get("passToken", "")),
+                     ("userId", cookies_dict.get("userId", "")),
+                     ("deviceId", cookies_dict.get("deviceId", ""))):
+            if v:
+                token[k] = v
+        account.token = token
         log.info("已从 cookie_text 恢复 token（passToken=%s… serviceToken=%s）",
-                 _tok_hash(account.token.get("passToken")),
-                 "有" if cookies_dict.get("serviceToken") else "空")
+                 _tok_hash(token.get("passToken")),
+                 "有" if _has_mina_session(token) else "空")
+    elif token:
+        account.token = token
+        log.info("沿用 .mi.token 中保存的会话（passToken=%s… serviceToken=%s）",
+                 _tok_hash(token.get("passToken")),
+                 "有" if _has_mina_session(token) else "无")
     else:
         log.warning("本地没有可恢复的 passToken（auth.json / cookie_text 均为空）")
 
@@ -906,7 +954,7 @@ async def _get_latest_ask_from_xiaoai(session: aiohttp.ClientSession, device_id:
 
 
 async def bridge_loop():
-    global _bridge_session
+    global _bridge_session, _active_parser
     cfg = load_config()
     mi_cfg = cfg.get("xiaomi", {})
     ha_cfg = cfg.get("homeassistant", {})
@@ -937,6 +985,7 @@ async def bridge_loop():
         return
 
     parser = IntentParser(cfg.get("intent_rules", []))
+    _active_parser = parser
     ha = HAClient(ha_cfg["url"], ha_cfg["token"])
     poll_interval = cfg.get("poll_interval_seconds", 2)
 
@@ -964,9 +1013,27 @@ async def bridge_loop():
 
         na = None
         logged_in = False
+        reused_session = False
+
+        # 尝试0: 复用 .mi.token 里的 micoapi 会话（ssecurity + serviceToken）。
+        # 重启时 passToken 经常已被小米轮换作废（code=70016），但 serviceToken
+        # 通常还有效；先拿它探测一次，能用就完全不碰 login()，避免"越登越死"。
+        if _has_mina_session(account.token):
+            log.info("尝试复用已保存的 micoapi 会话（不重新登录）...")
+            try:
+                na = MiNAService(account)
+                probe_devices = await na.device_list()
+                if probe_devices is not None:
+                    logged_in = True
+                    reused_session = True
+                    log.info("✅ 复用 micoapi 会话成功，跳过 passToken 登录（发现 %d 台设备）",
+                             len(probe_devices))
+            except Exception as e:
+                log.warning("复用 micoapi 会话失败: %s，回退到正常登录流程", e)
+                na = None
 
         # 尝试1: 用 passToken 绕过密码步骤（xiaomusic 做法，不需要 SMS）
-        if account.token.get('passToken'):
+        if not logged_in and account.token.get('passToken'):
             log.info("尝试 passToken 登录...")
             try:
                 ok = await account.login("micoapi")
@@ -1045,7 +1112,8 @@ async def bridge_loop():
         # 保存 token
         _save_auth_and_token(account)
         _set_xiaomi_health(True, "启动登录成功")
-        log.info("✅ 小米账号登录成功（已保存 auth.json / .mi.token）")
+        log.info("✅ 小米登录态就绪（已保存 auth.json / .mi.token）%s",
+                 "，本轮复用已有会话，未重新登录" if reused_session else "")
         if na is None:
             na = MiNAService(account)
 
@@ -1788,6 +1856,37 @@ class SaveConfigRequest(BaseModel):
     config: dict[str, Any]
 
 
+def _merge_login_credentials(cfg: dict, existing: dict) -> None:
+    """整份覆盖配置时保护小米登录凭据。
+
+    前端保存任意页面都是把内存里的整份 cfg 提交上来，页面上的副本可能比
+    扫码/搜索设备刚写下的凭据旧。以前这里直接覆盖，旧页面一保存就会把
+    cookie_text 写回旧值甚至写空，重启后自然登不上小米账号。
+    """
+    old_mi = existing.get("xiaomi") or {}
+    mi = cfg.get("xiaomi")
+    if not isinstance(mi, dict):
+        cfg["xiaomi"] = dict(old_mi)
+        return
+    # 明确换了用户名 = 换账号，这时不做保护
+    if str(mi.get("username") or "").strip() and \
+            str(mi.get("username") or "") != str(old_mi.get("username") or ""):
+        return
+    for key in ("username", "cookie_text", "device_did", "hardware"):
+        if not str(mi.get(key) or "").strip() and str(old_mi.get(key) or "").strip():
+            mi[key] = old_mi[key]
+    # cookie_text 新旧对账：auth.json 是扫码登录后写下的最新副本，
+    # 旧页面提交的 cookie 只有在与服务端现值一致时才允许覆盖。
+    auth_pass = _read_json_dict(AUTH_PATH).get("passToken") or ""
+    new_ct = str(mi.get("cookie_text") or "")
+    old_ct = str(old_mi.get("cookie_text") or "")
+    if auth_pass and new_ct != old_ct \
+            and _cookie_pass_token(new_ct) != auth_pass \
+            and _cookie_pass_token(old_ct) == auth_pass:
+        mi["cookie_text"] = old_ct
+        log.info("已阻止旧 cookie_text 覆盖当前登录副本（passToken=%s…）", _tok_hash(auth_pass))
+
+
 @app.post("/api/config")
 async def post_config(req: SaveConfigRequest):
     cfg = req.config
@@ -1805,6 +1904,8 @@ async def post_config(req: SaveConfigRequest):
             ((existing.get("notify") or {}).get("email") or {}).get("password", ""))
     if (cfg.get("web_auth") or {}).get("password") == masked:
         cfg["web_auth"]["password"] = (existing.get("web_auth") or {}).get("password", "")
+    # 登录凭据不能被旧页面/空值冲掉（否则重启必掉登录）
+    _merge_login_credentials(cfg, existing)
     # 面板密码开关：勾了但密码为空（且原来也没有）会让面板无法登录，直接拒绝
     wa = cfg.get("web_auth") or {}
     if wa.get("enabled") and not (wa.get("password") or "").strip():
@@ -1812,6 +1913,29 @@ async def post_config(req: SaveConfigRequest):
     save_config(cfg)
     log.info("配置已保存")
     return {"ok": True}
+
+
+class SaveRulesRequest(BaseModel):
+    rules: list[dict[str, Any]]
+
+
+@app.post("/api/rules")
+async def save_rules(req: SaveRulesRequest):
+    """只更新 intent_rules，不再整份覆盖配置。
+
+    意图规则是高频编辑项，而整份 POST /api/config 会把页面加载时的旧
+    登录凭据一起写回去。单独走这个接口，保存规则就绝不会影响登录态；
+    同时在跑的桥接器会热更新解析器，不需要重启。
+    """
+    rules = [r for r in req.rules if isinstance(r, dict)]
+    cfg = load_config()
+    cfg["intent_rules"] = rules
+    save_config(cfg)
+    if _active_parser is not None:
+        _active_parser.rules = rules
+    log.info("意图规则已保存（%d 条）%s", len(rules),
+             "，已热更新到运行中的桥接器" if _active_parser is not None else "")
+    return {"ok": True, "count": len(rules)}
 
 
 @app.post("/api/bridge/start")
